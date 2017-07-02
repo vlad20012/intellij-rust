@@ -1002,14 +1002,17 @@ MacroPattern ::= '(' MacroMatchingTree* ')'
 MacroMatchingTree ::=  '(' MacroMatchingTree* ')'
                      | '{' MacroMatchingTree* '}'
                      | '[' MacroMatchingTree* ']'
-                     | (MacroPatternSimpleMatching | MacroPatternComplexMatching)+
-                     | << placeholderMacroToken >>+
+                     | MacroPatternMatchingToken+
 
+MacroPatternMatchingToken ::= MacroPatternComplexMatching
+                     | MacroPatternSimpleMatching
+                     | PlaceholderMacroToken
 MacroPatternComplexMatching ::= '$' '(' MacroMatchingTree* ')' <<tokenAfterComplexPattern>>* ('*' | '+')
 MacroPatternSimpleMatching ::= '$' MacroBinding ':' identifier {
   implements = [ "org.rust.lang.core.psi.ext.RsNamedElement" ]
   mixin = "org.rust.lang.core.psi.ext.RsMacroPatternSimpleMatchingImplMixin"
 }
+PlaceholderMacroToken ::= << placeholderMacroToken >>
 
 MacroBody ::= '(' MacroTokenTree* ')'
             | '{' MacroTokenTree* '}'
@@ -1017,8 +1020,10 @@ MacroBody ::= '(' MacroTokenTree* ')'
 MacroTokenTree ::= '(' MacroTokenTree* ')'
                  | '{' MacroTokenTree* '}'
                  | '[' MacroTokenTree* ']'
-                 | (MacroBodyComplexMatching | MacroBodySimpleMatching) +
-                 | << placeholderMacroToken >> +
+                 | MacroBodyMatchingToken+
+MacroBodyMatchingToken ::= MacroBodyComplexMatching
+                     | MacroBodySimpleMatching
+                     | PlaceholderMacroToken
 MacroBodyComplexMatching ::= '$' '(' MacroTokenTree* ')' <<tokenAfterComplexPattern>>* ('*' | '+')
 MacroBodySimpleMatching ::= '$' (MacroBinding | "crate") {
   implements = [ "org.rust.lang.core.psi.ext.RsReferenceElement" ]

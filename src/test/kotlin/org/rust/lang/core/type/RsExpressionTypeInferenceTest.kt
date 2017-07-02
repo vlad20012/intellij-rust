@@ -526,4 +526,21 @@ class RsExpressionTypeInferenceTest : RsTypificationTestBase() {
             a;
         } //^ S
     """)
+
+    private val `$` = '$'
+
+    fun `test macro infer`() = testExpr("""
+        macro_rules! test111 {
+            ($`$`a:ident, $`$`b:ident) => {
+                $`$`a + 11 + $`$`b
+            }
+        }
+
+        fn main() {
+            let a = 1i32;
+            let b = test111!(a, 2i32);
+            b
+          //^ i32
+        }
+    """)
 }

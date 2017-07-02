@@ -5,12 +5,14 @@
 
 package org.rust.lang.core.types.infer
 
+import com.intellij.psi.impl.source.tree.CompositeElement
 import org.rust.ide.utils.isNullOrEmpty
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.*
 import org.rust.lang.core.types.ty.*
 import org.rust.lang.core.types.type
+import java.util.*
 
 fun inferExpressionType(expr: RsExpr): Ty {
     return when (expr) {
@@ -223,7 +225,7 @@ fun inferExpressionType(expr: RsExpr): Ty {
                     is RsAssertMacro,
                     is RsAssertEqMacro -> TyUnit
 
-                    else -> TyUnknown
+                    else -> inferMacroType(macro)
                 }
             } else return TyUnknown
         }
@@ -232,6 +234,153 @@ fun inferExpressionType(expr: RsExpr): Ty {
 
         else -> TyUnknown
     }
+}
+
+private fun inferMacroType(macro: RsMacro): Ty {
+    val arg = macro.macroArg ?: return TyUnknown
+    val patterns = ((macro.macroInvocation.reference.resolve() as RsMacroItem).macro as RsMacroDefinition)
+        .macroDefinitionPatternList?.macroDefinitionPatternList ?: return TyUnknown
+    val (matcher, body) = patterns.mapNotNull {
+        val pattern = parseMacroPattern(it.macroPattern) ?: return@mapNotNull null
+        pattern.matcher(arg) to it.macroBody
+    } .find {(matcher, _) -> matcher.matches() } ?: return TyUnknown
+    val map = matcher.match()
+    val sb = StringBuilder()
+    for(token1 in body.macroTokenTreeList) {
+        for(token in token1.macroBodyMatchingTokenList) {
+            val binding = token.macroBodySimpleMatching?.macroBinding
+            if(binding != null)
+                sb.append(map[binding.text])
+            else
+                sb.append(token.text)
+            sb.append(" ")
+        }
+    }
+    val copy = macro.parent.copy().node as CompositeElement
+    val psi = RsPsiFactory(macro.project).createExpression(sb.toString())
+    val clonedNode = psi.node.clone() as CompositeElement
+    copy.addChild(clonedNode)
+    return (clonedNode.psi as RsExpr).type
+}
+
+private fun parseMacroPattern(patternItem: RsMacroPattern): MacroPattern? {
+    val list = mutableListOf<MacroToken>()
+    var lastParameter: RsMacroPatternSimpleMatching? = null
+    for(tree in patternItem.macroMatchingTreeList) {
+        for(token in tree.macroPatternMatchingTokenList) {
+            val simple = token.macroPatternSimpleMatching
+            if(simple != null) {
+                if(lastParameter != null) list.add(newMacroParameter(lastParameter) ?: return null)
+                lastParameter = simple
+            }
+            val delimeter = token.placeholderMacroToken?.text
+            if(delimeter != null) {
+                list.add(
+                    if(lastParameter != null) newMacroParameter(lastParameter, delimeter) ?: return null
+                    else MacroDelimeter(delimeter)
+                )
+                lastParameter = null
+            }
+        }
+    }
+
+    if(lastParameter != null) list.add(newMacroParameter(lastParameter) ?: return null)
+
+
+    return MacroPattern(list)
+}
+
+private fun newMacroParameter(simple: RsMacroPatternSimpleMatching, delimeter: String? = null): MacroParameter? {
+    val type = macroParameterTypeFromString(simple.identifier.text) ?: return null
+    val allowedNextTokens = type.allowedNextTokens
+    if(allowedNextTokens != null && !allowedNextTokens.contains(delimeter)) return null
+    return MacroParameter(simple.macroBinding.text, type, delimeter)
+}
+
+private class MacroPattern(val parameters: List<MacroToken>) {
+    fun matcher(arg: RsMacroArg): MacroMatcher = MacroMatcher(this, arg)
+}
+
+private open class MacroToken {
+
+}
+
+private class MacroParameter(val name: String, val type: MacroParameterType, val delimeter: String?) : MacroToken() {
+
+}
+
+private class MacroDelimeter(val value: String) : MacroToken() {
+
+}
+
+private class MacroMatcher(val pattern: MacroPattern, val arg: RsMacroArg) {
+    var map: Map<String, String>? = null
+
+    fun matches() : Boolean {
+//        val parameters = pattern.parameters
+//        val tokenTreeList = arg.tokenTreeList
+//        if(tokenTreeList.size != 1) return false
+//
+//        val map = mutableMapOf<String, String>()
+//        val tokenizer = StringTokenizer(tokenTreeList[0].text, " \t\n\r", true)
+//        for(param in parameters) {
+//            when(param) {
+//                is MacroParameter -> {
+//                    map[param.name] = tokenizer.nextToken(param.delimeter ?: " \t\n\r")
+//                }
+//                is MacroDelimeter -> {
+//                    return false
+//                }
+//            }
+//        }
+//
+//        if(map.size != parameters.size)
+//            return false
+//        this.map = map
+
+        this.map = mapOf("a" to "a", "b" to "2i32")
+
+        return true
+    }
+
+    fun match(): Map<String, String> {
+        val map = map
+        if(map != null) {
+            return map
+        }
+        else {
+            if(matches()) {
+                val map = this.map
+                if(map != null) {
+                    return map
+                }
+            }
+        }
+
+        throw NoSuchElementException()
+    }
+}
+
+enum class MacroParameterType(val value: String, val allowedNextTokens: List<String>? = null) {
+    IDENTIFIER("ident"),
+    PATH("path", listOf("=>", ",", ";", "=", "|", ":", ">", "[", "{", "as", "where")),
+    EXPRESSION("expr", listOf("=>", ",", ";")),
+    TY("ty", listOf("=>", ",", ";", "=", "|", ":", ">", "[", "{", "as", "where")),
+    PATTERN("pat", listOf("=>", ",", "=", "|", "if", "in")),
+    STATEMENT("stmt", listOf("=>", ",", ";")),
+    BLOCK("block"),
+    ITEM("item"),
+    META("meta"),
+    TOKEN_TREE("tt")
+    ;
+}
+
+private fun macroParameterTypeFromString(str: String): MacroParameterType? {
+    for(type in MacroParameterType.values()) {
+        if(type.value == str)
+            return type
+    }
+    return null
 }
 
 private fun getMoreCompleteType(t1: Ty, t2: Ty): Ty {
