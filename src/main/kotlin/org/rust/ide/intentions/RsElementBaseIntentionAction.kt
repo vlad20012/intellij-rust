@@ -50,3 +50,17 @@ abstract class RsElementBaseIntentionAction<Ctx> : BaseElementAtCaretIntentionAc
         return findApplicableContext(project, editor, element) != null
     }
 }
+
+abstract class DjangoIntention: BaseElementAtCaretIntentionAction() {
+    final override fun isAvailable(project: Project, editor: Editor, element: PsiElement): Boolean {
+        checkReadAccessAllowed()
+        return invoke(project, editor, element, true)
+    }
+
+    final override fun invoke(project: Project, editor: Editor, element: PsiElement) {
+        checkWriteAccessAllowed()
+        invoke(project, editor, element, false)
+    }
+
+    abstract fun invoke(project: Project, editor: Editor, element: PsiElement, onlyCheckAvailability: Boolean): Boolean
+}

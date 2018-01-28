@@ -15,31 +15,23 @@ import org.rust.lang.core.psi.ext.RsStructOrEnumItemElement
 import org.rust.lang.core.psi.ext.findOuterAttr
 import org.rust.lang.core.psi.ext.ancestorStrict
 
-class AddDeriveIntention : RsElementBaseIntentionAction<AddDeriveIntention.Context>() {
+class AddDeriveIntention : DjangoIntention() {
     override fun getFamilyName() = "Add derive clause"
     override fun getText() = "Add derive clause"
 
-    class Context(
-        val item: RsStructOrEnumItemElement,
-        val itemStart: PsiElement
-    )
-
-    override fun findApplicableContext(project: Project, editor: Editor, element: PsiElement): Context? {
-        val item = element.ancestorStrict<RsStructOrEnumItemElement>() ?: return null
+    override fun invoke(project: Project, editor: Editor, element: PsiElement, onlyCheckAvailability: Boolean): Boolean {
+        val item = element.ancestorStrict<RsStructOrEnumItemElement>() ?: return false
         val keyword = when (item) {
             is RsStructItem -> item.vis ?: item.struct
             is RsEnumItem -> item.vis ?: item.enum
             else -> null
-        } ?: return null
-        return Context(item, keyword)
+        } ?: return false
 
-    }
-
-    override fun invoke(project: Project, editor: Editor, ctx: Context) {
-        val deriveAttr = findOrCreateDeriveAttr(project, ctx.item, ctx.itemStart)
-        val reformattedDeriveAttr = reformat(project, ctx.item, deriveAttr)
+        if (onlyCheckAvailability) return true
+        val deriveAttr = findOrCreateDeriveAttr(project, item, keyword)
+        val reformattedDeriveAttr = reformat(project, item, deriveAttr)
         moveCaret(editor, reformattedDeriveAttr)
-
+        return true
     }
 
     private fun findOrCreateDeriveAttr(project: Project, item: RsStructOrEnumItemElement, keyword: PsiElement): RsOuterAttr {
