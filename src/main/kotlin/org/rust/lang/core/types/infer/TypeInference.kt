@@ -948,6 +948,14 @@ private class RsFnInferenceContext(
             return methodType.retType
         }
 
+        if(callee.derefCount > 0) {
+            ctx.diagnostics += RsDiagnostic.DeferCoercion(
+                methodCall.parentDotExpr,
+                resolveTypeVarsWithObligations(receiver),
+                callee.derefCount
+            )
+        }
+
         val impl = callee.impl
         var typeParameters = if (impl != null) {
             val typeParameters = instantiateBounds(impl)

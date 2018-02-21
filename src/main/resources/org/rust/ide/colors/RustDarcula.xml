@@ -33,4 +33,9 @@
             <option name="FOREGROUND" value="606060" />
         </value>
     </option>
+    <option name="org.rust.IMPLICIT_COERCION">
+        <value>
+            <option name="BACKGROUND" value="223c23" />
+        </value>
+    </option>
 </list>

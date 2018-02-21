@@ -70,6 +70,8 @@ enum class RsColor(humanName: String, val default: TextAttributesKey) {
 
     VALID_STRING_ESCAPE("Valid escape sequence", Default.VALID_STRING_ESCAPE),
     INVALID_STRING_ESCAPE("Invalid escape sequence", Default.INVALID_STRING_ESCAPE),
+
+    IMPLICIT_COERCION("Implicit coerction", Default.METADATA),
     ;
 
     val textAttributesKey = TextAttributesKey.createTextAttributesKey("org.rust.$name", default)

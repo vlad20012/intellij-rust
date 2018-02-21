@@ -16,6 +16,7 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.xml.util.XmlStringUtil.escapeString
 import org.rust.ide.annotator.fixes.*
+import org.rust.ide.colors.RsColor
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.ImplLookup
@@ -567,7 +568,47 @@ sealed class RsDiagnostic(
             fixes = listOf(ConvertToReferenceFix(element), ConvertToBoxFix(element))
         )
     }
+
+    class DeferCoercion(
+        private val dotExpr: RsDotExpr,
+        private val receiverTy: Ty,
+        private val derefCount: Int
+    ) : RsDiagnostic(dotExpr.dot) {
+        override fun prepare(): PreparedAnnotation {
+            val lookup = ImplLookup.relativeTo(dotExpr)
+            // Paired elements, i.e. (1, 2), (2, 3) etc
+            val derefPairs = run {
+                val derefSeq = lookup.coercionSequence(receiverTy)
+                var prev = receiverTy
+                derefSeq.drop(1).map { current ->
+                    val ret = prev to current
+                    prev = current
+                    ret
+                }
+            }
+            val description = derefPairs
+                .take(derefCount)
+                .map { (src, dst) ->
+//                    RsLangItemIndex.findLangItem(dotExpr.project, "deref")
+//                        ?.let { lookup.select(TraitRef(src, BoundElement(it))) }
+                    val tyS = escapeString(dst.toString())
+                    "to $tyS &nbsp;&nbsp;&nbsp;&nbsp;<i>(${if (isBuiltinDeref(src)) "builtin" else "overloaded"})</i>"
+                }
+                .map { "<li> $it</li>" }
+                .joinToString("", "<ol>", "</ol>")
+            return PreparedAnnotation(
+                INFO,
+                E0277,
+                style = RsColor.IMPLICIT_COERCION,
+                header = "Deref coercion: $derefCount dereference${if (derefCount == 1) "" else "s"} performed",
+                description = description
+            )
+        }
+    }
 }
+
+private fun isBuiltinDeref(ty: Ty): Boolean =
+    ty is TyReference || ty is TyPointer
 
 enum class RsErrorCode {
     E0046, E0050, E0060, E0061, E0069,
@@ -593,6 +634,7 @@ class PreparedAnnotation(
     val errorCode: RsErrorCode,
     val header: String,
     val description: String = "",
+    val style: RsColor? = null,
     val fixes: List<LocalQuickFix> = emptyList()
 )
 
@@ -614,6 +656,8 @@ fun RsDiagnostic.addToHolder(holder: AnnotationHolder) {
         simpleHeader(prepared.errorCode, prepared.header),
         "<html>${htmlHeader(prepared.errorCode, prepared.header)}<br>${prepared.description}</html>"
     )
+
+    prepared.style?.let { ann.textAttributes = it.textAttributesKey }
 
     for (fix in prepared.fixes) {
         if (fix is IntentionAction) {
