@@ -964,6 +964,23 @@ class RsQuickDocumentationTest : RsDocumentationProviderTest() {
         <pre>fn <b>scan</b>&lt;St, B, F&gt;(self, initial_state: St, f: F) -&gt; Scan&lt;Self, St, F&gt;<br>where<br>&nbsp;&nbsp;&nbsp;&nbsp;Self: <a href="psi_element://Sized">Sized</a>,<br>&nbsp;&nbsp;&nbsp;&nbsp;F: <a href="psi_element://FnMut">FnMut</a>(&amp;mut St, Self::<a href="psi_element://Self::Item">Item</a>) -&gt; <a href="psi_element://Option">Option</a>&lt;B&gt;,</pre>
     """)
 
+    fun `test item defined with macro`() = doTest("""
+        macro_rules! foo {
+            ($ i:item) => { $ i }
+        }
+        foo! {
+            /// Test struct
+            struct S;
+        }
+        fn main() {
+            let a = S;
+        }         //^
+    """, """
+        <pre>test_package</pre>
+        <pre>struct <b>S</b></pre>
+        <p>Test struct</p>
+    """)
+
     private fun doTest(@Language("Rust") code: String, @Language("Html") expected: String)
         = doTest(code, expected, RsDocumentationProvider::generateDoc)
 }
