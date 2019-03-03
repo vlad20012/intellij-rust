@@ -1241,7 +1241,10 @@ private MacroHead ::= AttrsAndVis &(PathWithoutTypes '!') (SpecialMacro | Common
 
 MacroArgument ::= <<any_braces CompactTT>>
 // `CompactTT` differs from `TT` in that it does not create an additional `TT` nodes for each unpaired token
-CompactTT ::= (<<any_braces CompactTT>> | <<unpairedToken>>)*
+CompactTT ::= (<<any_braces CompactTT>> | MTT)*
+MTT ::= <<unpairedToken>> {
+  mixin = "org.rust.lang.core.psi.ext.RsMttMixin"
+}
 
 // Used only manually in (external) macro matching code
 //noinspection BnfUnusedRule

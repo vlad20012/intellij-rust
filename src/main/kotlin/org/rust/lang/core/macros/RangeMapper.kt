@@ -8,11 +8,12 @@ package org.rust.lang.core.macros
 import com.intellij.openapi.util.TextRange
 
 /*inline*/ class RangeMapper(private val ranges: List<Pair<TextRange, TextRange>>) {
-    fun map(src: TextRange): TextRange? {
-        val mapped = ranges.find { (s) ->
+    fun map(src: TextRange): List<TextRange> {
+        return ranges.filter { (s) ->
             src.startOffset >= s.startOffset && src.endOffset <= s.endOffset
-        }?.second
-        check(mapped == null || mapped.length == src.length)
-        return mapped
+        }.map { (s, d) ->
+            val start = d.startOffset + (src.startOffset - s.startOffset)
+            TextRange(start, start + src.length)
+        }
     }
 }

@@ -18,7 +18,6 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.impl.source.DummyHolderFactory
-import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.psi.tree.TokenSet
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
@@ -93,9 +92,14 @@ private data class MetaVarValue(
 
 private data class MappedTextRange(
     val srcOffset: Int,
-    val dstOffset: Int,
-    val length: Int
+    val offsetInExpansion: Int,
+    val length: Int,
+    val sourceType: SourceType
 )
+
+private enum class SourceType {
+    MACRO_CALL, MACRO_DEFINITION
+}
 
 private data class WithParent(
     private val subst: MacroSubstitution,
@@ -110,14 +114,6 @@ private data class WithParent(
 
 private val STD_MACRO_WHITELIST = setOf("write", "writeln")
 
-private fun mmmap(ranges: RangeMapper, call: RsMacroCall, expansion: RsFile, element: PsiElement): PsiElement? {
-    val macroOffset = call.macroArgument?.compactTT?.startOffset ?: return null
-    val elementOffset = element.startOffset - macroOffset
-    check(elementOffset >= 0)
-    val mapped = ranges.map(TextRange(elementOffset, elementOffset + element.textLength)) ?: return null
-    return expansion.findElementAt(mapped.startOffset)?.takeIf { it.endOffset == mapped.endOffset }
-}
-
 class MacroExpander(val project: Project) {
     private val psiFactory = RsPsiFactory(project, markGenerated = false)
 
@@ -129,15 +125,7 @@ class MacroExpander(val project: Project) {
 
         val (expandedText, ranges) = expandMacroAsText(def, call) ?: return null
 
-        return parseExpandedTextWithContext(call.expansionContext, psiFactory, expandedText)?.also { exp ->
-            call.macroArgument?.compactTT?.descendantsOfType<LeafPsiElement>()
-                ?.filter { it !is PsiWhiteSpace && it !is PsiComment }
-                ?.forEach {
-                val mapped = mmmap(ranges, call, exp.file, it)
-                println("`${it.text}` -> `${mapped?.text}` in `${mapped?.parent?.text}`")
-            }
-            println()
-        }
+        return parseExpandedTextWithContext(call.expansionContext, psiFactory, expandedText, ranges)
     }
 
     private fun expandMacroAsText(def: RsMacro, call: RsMacroCall): Pair<CharSequence, RangeMapper>? {
@@ -192,7 +180,7 @@ class MacroExpander(val project: Project) {
         val ranges = mutableListOf<MappedTextRange>()
         if (!substituteMacro(sb, ranges, root, subst)) return null
         return sb to RangeMapper(ranges.map {
-            TextRange(it.srcOffset, it.srcOffset + it.length) to TextRange(it.dstOffset, it.dstOffset + it.length)
+            TextRange(it.srcOffset, it.srcOffset + it.length) to TextRange(it.offsetInExpansion, it.offsetInExpansion + it.length)
         })
     }
 
@@ -204,7 +192,7 @@ class MacroExpander(val project: Project) {
                     if (!substituteMacro(sb, ranges, child, subst)) return false
                 is RsMacroReference -> {
                     val value = subst.getVar(child.referenceName) ?: return false
-                    ranges += MappedTextRange(value.offsetInCallBody, sb.length, value.value.length)
+                    ranges += MappedTextRange(value.offsetInCallBody, sb.length, value.value.length, SourceType.MACRO_CALL)
                     sb.safeAppend(value.value)
                 }
                 is RsMacroExpansionReferenceGroup -> {
@@ -221,6 +209,7 @@ class MacroExpander(val project: Project) {
                     }
                 }
                 else -> {
+//                    ranges += MappedTextRange(child.offsetInDefBody, sb.length, child.textLength, SourceType.MACRO_DEFINITION)
                     sb.safeAppend(child.text)
                 }
             }

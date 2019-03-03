@@ -111,7 +111,8 @@ private fun getMacroExpansions(macroToExpand: RsMacroCall, expandRecursively: Bo
     return parseExpandedTextWithContext(
         macroToExpand.expansionContext,
         RsPsiFactory(macroToExpand.project),
-        expansionText
+        expansionText,
+        null!!
     )
 }
 
@@ -122,7 +123,7 @@ private fun reformatMacroExpansion(
     val file = expansion.file
     runWriteAction { formatPsiFile(file) }
 
-    return getExpansionFromExpandedFile(macroToExpand.expansionContext, file)
+    return getExpansionFromExpandedFile(macroToExpand.expansionContext, file, null!!)
         ?: error("Can't recover macro expansion after reformat")
 }
 
