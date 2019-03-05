@@ -192,8 +192,8 @@ class MacroExpander(val project: Project) {
                     if (!substituteMacro(sb, ranges, child, subst)) return false
                 is RsMacroReference -> {
                     val value = subst.getVar(child.referenceName) ?: return false
-                    ranges += MappedTextRange(value.offsetInCallBody, sb.length, value.value.length, SourceType.MACRO_CALL)
                     sb.safeAppend(value.value)
+                    ranges += MappedTextRange(value.offsetInCallBody, sb.length - value.value.length, value.value.length, SourceType.MACRO_CALL)
                 }
                 is RsMacroExpansionReferenceGroup -> {
                     child.macroExpansionContents?.let { contents ->
