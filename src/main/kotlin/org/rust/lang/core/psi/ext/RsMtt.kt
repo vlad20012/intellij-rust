@@ -7,11 +7,13 @@ package org.rust.lang.core.psi.ext
 
 import com.intellij.lang.ASTNode
 import com.intellij.openapi.util.TextRange
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiPolyVariantReferenceBase
 import com.intellij.psi.PsiReference
 import com.intellij.psi.ResolveResult
 import org.rust.lang.core.psi.RsMacroCall
 import org.rust.lang.core.psi.RsMtt
+import org.rust.lang.core.resolve.ref.RsReferenceBase
 
 abstract class RsMttMixin(node: ASTNode) : RsElementImpl(node), RsMtt {
     override fun getReference(): PsiReference? {
@@ -49,6 +51,11 @@ private class MultiDelegatedPsiReference(psiElement: RsMtt, val delegates: List<
 
     override fun getRangeInElement(): TextRange {
         return TextRange(0, element.textLength)
+    }
+
+    override fun handleElementRename(newElementName: String): PsiElement {
+        RsReferenceBase.doRename(element.firstChild, newElementName)
+        return element
     }
 }
 

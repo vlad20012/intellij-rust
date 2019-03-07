@@ -55,7 +55,7 @@ abstract class RsReferenceBase<T : RsWeakReferenceElement>(
     override fun hashCode(): Int = element.hashCode()
 
     companion object {
-        @JvmStatic protected fun doRename(identifier: PsiElement, newName: String) {
+        @JvmStatic fun doRename(identifier: PsiElement, newName: String) {
             val factory = RsPsiFactory(identifier.project)
             val newId = when (identifier.elementType) {
                 IDENTIFIER -> {
