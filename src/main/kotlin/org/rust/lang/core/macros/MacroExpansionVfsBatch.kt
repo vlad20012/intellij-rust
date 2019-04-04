@@ -7,10 +7,10 @@ package org.rust.lang.core.macros
 
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.util.io.*
+import com.intellij.util.io.exists
 import org.apache.commons.lang.RandomStringUtils
 import org.rust.openapiext.checkWriteAccessAllowed
-import org.rust.openapiext.pathAsPath
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -39,12 +39,12 @@ class LocalFsMacroExpansionVfsBatch(
     override fun createFileWithContent(content: String): MacroExpansionVfsBatch.Path =
         PathImpl.NioPath(createFileInternal(content))
 
-    private fun createFileInternal(content: String): Path {
+    private fun createFileInternal(content: String): String {
         val name = RandomStringUtils.random(16, "0123456789abcdifghijklmnopqrstuvwxyz")
         return batch.run {
             realFsExpansionContentRoot
-                .getOrCreateDirectory(name[0].toString())
-                .getOrCreateDirectory(name[1].toString())
+//                .getOrCreateDirectory(name[0].toString())
+//                .getOrCreateDirectory(name[1].toString())
                 .createFile(name.substring(2) + ".rs", content)
         }
     }
@@ -62,18 +62,18 @@ class LocalFsMacroExpansionVfsBatch(
     }
 
     private sealed class PathImpl : MacroExpansionVfsBatch.Path {
-        abstract fun toPath(): Path
+        abstract fun toPath(): String
 
         class VFile(val file: VirtualFile): PathImpl() {
             override fun toVirtualFile(): VirtualFile? = file
 
-            override fun toPath(): Path = file.pathAsPath
+            override fun toPath(): String = file.path
         }
-        class NioPath(val path: Path): PathImpl() {
+        class NioPath(val path: String): PathImpl() {
             override fun toVirtualFile(): VirtualFile? =
-                LocalFileSystem.getInstance().findFileByIoFile(path.toFile())
+                SnapshotOnlyVFS.getInstance().findFileByPath(path)
 
-            override fun toPath(): Path = path
+            override fun toPath(): String = path
         }
     }
 }
@@ -82,17 +82,20 @@ abstract class VfsBatch {
     protected val dirEvents: MutableList<DirCreateEvent> = mutableListOf()
     protected val fileEvents: MutableList<Event> = mutableListOf()
 
-    fun Path.createFile(name: String, content: String): Path =
+    fun Path.createFile(name: String, content: String): String =
         createFile(this, name, content)
 
     @JvmName("createFile_")
-    private fun createFile(parent: Path, name: String, content: String): Path {
-        val child = parent.resolve(name)
-        check(!child.exists())
-        child.createFile()
-        child.write(content) // UTF-8
+    private fun createFile(parent: Path, name: String, content: String): String {
+//        val child = parent.resolve(name)
+//        check(!child.exists())
+//        child.createFile()
+//        child.write(content) // UTF-8
 
-        fileEvents.add(Event.Create(parent, name, content))
+        val child = "/$name"
+        SnapshotOnlyVFS.getInstance().createFileWithContent(child, content)
+
+        fileEvents.add(Event.Create(File(child), content))
         return child
     }
 
@@ -118,17 +121,18 @@ abstract class VfsBatch {
         return createDirectory(parent, name)
     }
 
-    fun writeFile(file: Path, content: String) {
-        check(file.isFile())
-        file.write(content) // UTF-8
+    fun writeFile(file: String, content: String) {
+//        check(file.isFile())
+//        file.write(content) // UTF-8
+        SnapshotOnlyVFS.getInstance().writeFileContent(file, content)
 
-        fileEvents.add(Event.Write(file, content))
+        fileEvents.add(Event.Write(File(file), content))
     }
 
-    fun deleteFile(file: Path) {
-        file.delete()
-
-        fileEvents.add(Event.Delete(file))
+    fun deleteFile(file: String) {
+//        file.delete()
+//
+//        fileEvents.add(Event.Delete(file))
     }
 
     abstract fun applyToVfs()
@@ -136,9 +140,9 @@ abstract class VfsBatch {
     protected class DirCreateEvent(val parent: Path, val name: String)
 
     protected sealed class Event {
-        class Create(val parent: Path, val name: String, val content: String): Event()
-        class Write(val file: Path, val content: String): Event()
-        class Delete(val file: Path): Event()
+        class Create(val file: File, val content: String): Event()
+        class Write(val file: File, val content: String): Event()
+        class Delete(val file: File): Event()
     }
 
 }
@@ -148,7 +152,7 @@ class RefreshBasedVfsBatch : VfsBatch() {
         checkWriteAccessAllowed()
 
         if (fileEvents.isNotEmpty() || dirEvents.isNotEmpty()) {
-            val files = dirEvents.map { it.toFile().toFile() } + fileEvents.map { it.toFile().toFile() }
+            val files = dirEvents.map { it.toFile().toFile() } + fileEvents.map { it.toFile() }
             LocalFileSystem.getInstance().refreshIoFiles(files, /* async = */ false, /* recursive = */ false, null)
             fileEvents.clear()
         }
@@ -158,8 +162,8 @@ class RefreshBasedVfsBatch : VfsBatch() {
         return parent.resolve(name)
     }
 
-    private fun Event.toFile(): Path = when (this) {
-        is Event.Create -> parent.resolve(name)
+    private fun Event.toFile(): File = when (this) {
+        is Event.Create -> file
         is Event.Write -> file
         is Event.Delete -> file
     }

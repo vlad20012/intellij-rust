@@ -114,9 +114,9 @@ class RsMacroExpansionCachingTest : RsMacroExpansionTestBase() {
 
     fun `test edit call`() = checkReExpanded(type(), """
         macro_rules! foo { ($ i:ident) => { mod $ i {} } }
-        macro_rules! bar { ($ i:ident) => { mod $ i {} } }
+//        macro_rules! bar { ($ i:ident) => { mod $ i {} } }
         foo!(a/*caret*/);
-        bar!(a);
+//        bar!(a);
     """, "foo")
 
     fun `test edit def 1`() = checkReExpanded(type(), """

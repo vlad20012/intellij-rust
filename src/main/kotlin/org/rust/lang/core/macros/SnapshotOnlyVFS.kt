@@ -28,7 +28,8 @@ class SnapshotOnlyVFS : LocalFileSystemBase() {
     private val tempVals: MutableMap<String, TempVals> = ContainerUtil.newConcurrentMap()
     private data class TempVals(
         val length: Int,
-        val timeStamp: Long
+        val timeStamp: Long,
+        var content: ByteArray? = null
     )
 
     override fun replaceWatchedRoots(
@@ -67,9 +68,9 @@ class SnapshotOnlyVFS : LocalFileSystemBase() {
 
     }
 
-    override fun exists(fileOrDirectory: VirtualFile): Boolean {
-        return PersistentFS.getInstance().exists(fileOrDirectory)
-    }
+//    override fun exists(fileOrDirectory: VirtualFile): Boolean {
+//        return PersistentFS.getInstance().exists(fileOrDirectory)
+//    }
 
     override fun list(file: VirtualFile): Array<String> {
         return PersistentFS.getInstance().listPersisted(file)
@@ -100,12 +101,19 @@ class SnapshotOnlyVFS : LocalFileSystemBase() {
 
     @Throws(IOException::class)
     override fun contentsToByteArray(file: VirtualFile): ByteArray {
-        if (!exists(file)) throw FileNotFoundException()
-        return byteArrayOf()
+        val vals = tempVals[file.path] ?: throw FileNotFoundException()
+        return vals.content ?: byteArrayOf()
     }
 
     @Throws(IOException::class)
     override fun getInputStream(file: VirtualFile): InputStream {
+        val v = tempVals[file.path] ?: throw FileNotFoundException()
+        val content = v.content
+        if (content != null) {
+            v.content = null
+            return ByteArrayInputStream(content)
+        }
+
         error("")
     }
 
@@ -130,16 +138,26 @@ class SnapshotOnlyVFS : LocalFileSystemBase() {
         if (file.path == "/") return FileAttributes(true, false, false, false, 0, 0, true)
         if (file is FakeVirtualFile) return FileAttributes(!file.name.contains('.'), false, false, false, 0, 0, true)
         if (file !is VirtualFileWithId) return null
-        val temp = tempVals[file.path]
+        val vals = tempVals[file.path] ?: return null
         val attrs = PersistentFS.getInstance().getFileAttributes((file as VirtualFileWithId).id)
         return FileAttributes(
             PersistentFS.isDirectory(attrs),
             PersistentFS.isSpecialFile(attrs),
             PersistentFS.isSymLink(attrs),
             PersistentFS.isHidden(attrs),
-            getLength(file),
-            temp?.timeStamp ?: 0,
+            vals.length.toLong(),
+            vals.timeStamp,
             true
         )
+    }
+
+    fun createFileWithContent(path: String, content: String) {
+        val buf = content.toByteArray()
+        tempVals[path] = TempVals(buf.size, LocalTimeCounter.currentTime(), buf)
+    }
+
+    fun writeFileContent(path: String, content: String) {
+        val buf = content.toByteArray()
+        tempVals[path] = TempVals(buf.size, LocalTimeCounter.currentTime(), buf)
     }
 }
