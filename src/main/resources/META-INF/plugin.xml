@@ -802,6 +802,7 @@
         <indexedRootsProvider implementation="org.rust.lang.core.macros.RsIndexableSetContributor"/>
         <writingAccessProvider implementation="org.rust.lang.core.macros.RsMacroExpansionWritingAccessProvider"/>
         <cachesInvalidator implementation="org.rust.lang.core.macros.RsMacroExpansionCachesInvalidator"/>
+        <virtualFileSystem key="snapshot" implementationClass="org.rust.lang.core.macros.SnapshotOnlyVFS"/>
 
     </extensions>
 
