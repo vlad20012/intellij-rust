@@ -836,6 +836,9 @@
             <implementation-class>org.rust.ide.annotator.RsExternalLinterPassFactory</implementation-class>
         </component>
         <component>
+            <implementation-class>org.rust.ide.annotator.RsMacroGeneralHighlightingPassFactory</implementation-class>
+        </component>
+        <component>
             <interface-class>org.rust.lang.core.macros.MacroExpansionManager</interface-class>
             <implementation-class>org.rust.lang.core.macros.MacroExpansionManagerImpl</implementation-class>
         </component>
