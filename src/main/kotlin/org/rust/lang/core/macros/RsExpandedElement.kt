@@ -52,12 +52,19 @@ val RsExpandedElement.expandedFromRecursively: RsMacroCall?
     }
 
 fun PsiElement.findMacroCallExpandedFrom(): RsMacroCall? {
-    val found = ancestors
-        .filterIsInstance<RsExpandedElement>()
-        .mapNotNull { it.expandedFromRecursively }
-        .firstOrNull()
+    val found = findMacroCallExpandedFromNonRecursive()
     return found?.findMacroCallExpandedFrom() ?: found
 }
+
+fun PsiElement.findMacroCallExpandedFromNonRecursive(): RsMacroCall? {
+    return ancestors
+        .filterIsInstance<RsExpandedElement>()
+        .mapNotNull { it.expandedFrom }
+        .firstOrNull()
+}
+
+val PsiElement.isExpandedFromMacro: Boolean
+    get() = findMacroCallExpandedFromNonRecursive() != null
 
 
 private val RS_EXPANSION_CONTEXT = Key.create<RsElement>("org.rust.lang.core.psi.CODE_FRAGMENT_FILE")

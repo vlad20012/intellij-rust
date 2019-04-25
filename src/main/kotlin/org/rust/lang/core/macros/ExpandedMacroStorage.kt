@@ -10,9 +10,14 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.ModificationTracker
+import com.intellij.openapi.util.SimpleModificationTracker
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.VirtualFileWithId
+import com.intellij.openapi.vfs.newvfs.FileAttribute
 import com.intellij.psi.PsiAnchor
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
@@ -110,7 +115,8 @@ class ExpandedMacroStorage(val project: Project) {
         oldInfo: ExpandedMacroInfo,
         callHash: HashCode?,
         defHash: HashCode?,
-        expansionFile: VirtualFile?
+        expansionFile: VirtualFile?,
+        ranges: CompactRangeMap?
     ): ExpandedMacroInfo {
         checkWriteAccessAllowed()
 
@@ -135,6 +141,10 @@ class ExpandedMacroStorage(val project: Project) {
         }
 
         newInfo.expansionFile?.let { getOrCreateSourceFile(it) }
+
+        if (newInfo.expansionFile != null && ranges != null) {
+            newInfo.expansionFile.writeRangeMap(ranges)
+        }
 
         return newInfo
     }
@@ -190,13 +200,15 @@ class ExpandedMacroStorage(val project: Project) {
 
     companion object {
         private val LOG = Logger.getInstance(ExpandedMacroStorage::class.java)
-        private const val STORAGE_VERSION = 5
+        private const val STORAGE_VERSION = 6
+        const val RANGE_MAP_ATTRIBUTE_VERSION = 2
 
         fun load(project: Project, dataFile: Path): ExpandedMacroStorage? {
             return try {
                 DataInputStream(InflaterInputStream(Files.newInputStream(dataFile))).use { data ->
                     if (data.readInt() != STORAGE_VERSION) return null
                     if (data.readInt() != RsFileStub.Type.stubVersion) return null
+                    if (data.readInt() != RANGE_MAP_ATTRIBUTE_VERSION) return null
 
                     val sourceFilesSize = data.readInt()
                     val sourceFiles = ArrayList<SourceFile>(sourceFilesSize)
@@ -223,6 +235,7 @@ class ExpandedMacroStorage(val project: Project) {
             DataOutputStream(DeflaterOutputStream(Files.newOutputStream(dataFile))).use { data ->
                 data.writeInt(STORAGE_VERSION)
                 data.writeInt(RsFileStub.Type.stubVersion)
+                data.writeInt(RANGE_MAP_ATTRIBUTE_VERSION)
 
                 data.writeInt(storage.sourceFiles.size())
                 storage.sourceFiles.forEachValue { it.writeTo(data); true }
@@ -652,3 +665,29 @@ private fun calcStubIndex(psi: StubBasedPsiElement<*>): Int {
 
 private val VirtualFile.fileId: Int
     get() = (this as VirtualFileWithId).id
+
+private val RANGE_MAP_MOD_TRACKER_KEY: Key<SimpleModificationTracker> = Key.create("RANGE_MAP_MOD_TRACKER_KEY")
+private val RANGE_MAP_ATTRIBUTE = FileAttribute(
+    "org.rust.macro.RangeMap",
+    ExpandedMacroStorage.RANGE_MAP_ATTRIBUTE_VERSION,
+    /*fixedSize = */ true // don't allocate extra space for each record
+)
+
+private fun VirtualFile.writeRangeMap(ranges: CompactRangeMap) {
+    checkWriteAccessAllowed()
+    RANGE_MAP_ATTRIBUTE.writeAttribute(this).use {
+        ranges.writeTo(it)
+    }
+    // if not exists, then nobody track us, so we can skip incrementing anything
+    getUserData(RANGE_MAP_MOD_TRACKER_KEY)?.incModificationCount()
+}
+
+fun VirtualFile.loadRangeMap(): CompactRangeMap? {
+    checkReadAccessAllowed()
+    val data = RANGE_MAP_ATTRIBUTE.readAttribute(this) ?: return null
+    return CompactRangeMap.readFrom(data)
+}
+
+fun VirtualFile.loadRangeMapWithModTracker(): Pair<CompactRangeMap?, ModificationTracker> {
+    return loadRangeMap() to getOrPut(RANGE_MAP_MOD_TRACKER_KEY) { SimpleModificationTracker() }
+}
