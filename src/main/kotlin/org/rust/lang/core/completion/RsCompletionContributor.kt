@@ -19,6 +19,7 @@ class RsCompletionContributor : CompletionContributor() {
         extend(CompletionType.BASIC, RsDeriveCompletionProvider.elementPattern, RsDeriveCompletionProvider)
         extend(CompletionType.BASIC, AttributeCompletionProvider.elementPattern, AttributeCompletionProvider)
         extend(CompletionType.BASIC, RsMacroCompletionProvider.elementPattern, RsMacroCompletionProvider)
+        extend(CompletionType.BASIC, RsMacroBodyCompletionProvider.elementPattern, RsMacroBodyCompletionProvider)
     }
 
     override fun invokeAutoPopup(position: PsiElement, typeChar: Char): Boolean =

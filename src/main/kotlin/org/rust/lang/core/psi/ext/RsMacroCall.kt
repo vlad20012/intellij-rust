@@ -5,7 +5,6 @@
 
 package org.rust.lang.core.psi.ext
 
-import com.intellij.codeInsight.completion.CompletionUtil
 import com.intellij.lang.ASTNode
 import com.intellij.openapi.util.SimpleModificationTracker
 import com.intellij.psi.PsiElement
@@ -69,7 +68,7 @@ val RsMacroCall.expansion: MacroExpansion?
     get() = CachedValuesManager.getCachedValue(this) {
         val project = project
         CachedValueProvider.Result.create(
-            project.macroExpansionManager.getExpansionFor(CompletionUtil.getOriginalOrSelf(this)),
+            project.macroExpansionManager.getExpansionFor(this),
             rustStructureOrAnyPsiModificationTracker
         )
     }

@@ -89,7 +89,7 @@ object RsCommonCompletionProvider : CompletionProvider<CompletionParameters>() {
         }
 
         if (isSimplePath && RsCodeInsightSettings.getInstance().suggestOutOfScopeItems) {
-            addCompletionsFromIndex(parameters, result, processedPathNames, expectedTy)
+            addCompletionsFromIndex(parameters, context, result, processedPathNames, expectedTy)
         }
     }
 
@@ -121,12 +121,22 @@ object RsCommonCompletionProvider : CompletionProvider<CompletionParameters>() {
 
     private fun addCompletionsFromIndex(
         parameters: CompletionParameters,
+        context: ProcessingContext,
         result: CompletionResultSet,
         processedPathNames: Set<String>,
         expectedTy: Ty?
     ) {
+        val sourceParameters = context.sourceCompletionParameters
+        val isMacroBodyCompletion = sourceParameters != null
         // We use the position in the original file in order not to process empty paths
-        val path = parameters.originalPosition?.parent as? RsPath ?: return
+        val originalPosition = (sourceParameters ?: parameters).originalPosition ?: return
+        val actualPosition = if (isMacroBodyCompletion) parameters.position else originalPosition
+        if (sourceParameters != null &&
+            sourceParameters.position.contextOrSelf<RsElement>()?.containingMod !=
+            actualPosition.contextOrSelf<RsElement>()?.containingMod) {
+            return
+        }
+        val path = actualPosition.parent as? RsPath ?: return
         if (TyPrimitive.fromPath(path) != null) return
         Testmarks.pathCompletionFromIndex.hit()
 

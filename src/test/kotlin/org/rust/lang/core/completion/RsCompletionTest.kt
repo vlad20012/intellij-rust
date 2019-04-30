@@ -783,4 +783,30 @@ class RsCompletionTest : RsCompletionTestBase() {
             x.1.field/*caret*/
         }
     """)
+
+    fun `test 123`() = doSingleCompletion("""
+        macro_rules! foo {
+            ($($ i:item)*) => {
+                $( $ i )*
+            };
+        }
+        foo! {
+            struct FooBar;
+            fn bar() {
+                F/*caret*/
+            }
+        }
+    """, """
+        macro_rules! foo {
+            ($($ i:item)*) => {
+                $( $ i )*
+            };
+        }
+        foo! {
+            struct FooBar;
+            fn bar() {
+                FooBar/*caret*/
+            }
+        }
+    """)
 }
