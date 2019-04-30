@@ -163,14 +163,14 @@ private fun mapOffsetFromCallBodyToExpansion(
 }
 
 private fun Int.toBodyRelativeOffset(call: RsMacroCall): Int? {
-    val macroOffset = call.macroArgument?.compactTT?.startOffset ?: return null
+    val macroOffset = call.macroArgument?.macroArgumentTT?.startOffset ?: return null
     val elementOffset = this - macroOffset
     check(elementOffset >= 0)
     return elementOffset
 }
 
 private fun Int.fromBodyRelativeOffset(call: RsMacroCall): Int? {
-    val macroRange = call.macroArgument?.compactTT?.textRange ?: return null
+    val macroRange = call.macroArgument?.macroArgumentTT?.textRange ?: return null
     val elementOffset = this + macroRange.startOffset
     check(elementOffset <= macroRange.endOffset)
     return elementOffset

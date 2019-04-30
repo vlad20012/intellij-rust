@@ -787,7 +787,7 @@ private ScalarTypeReferenceInner ::= ArrayType
 TypeReference ::= TypeReferenceInner {
   implements = "org.rust.lang.core.macros.RsExpandedElement"
   stubClass = "org.rust.lang.core.stubs.RsPlaceholderStub"
-  extends = "org.rust.lang.core.psi.ext.RsStubbedElementImpl<?>"
+  mixin = "org.rust.lang.core.psi.ext.RsTypeReferenceImplMixin"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
@@ -1281,8 +1281,14 @@ MacroCallNoSemicolons ::= MacroHead {
 
 private MacroHead ::= AttrsAndVis &(PathWithoutTypes '!') (SpecialMacro | CommonMacro)
 
-MacroArgument ::= <<any_braces CompactTT>>
+MacroArgument ::= <<any_braces MacroArgumentTT>>
 // `CompactTT` differs from `TT` in that it does not create an additional `TT` nodes for each unpaired token
+MacroArgumentTT ::= (<<any_braces MacroArgumentTT>> | MacroBodyIdent | <<unpairedToken>>)*
+MacroBodyIdent ::= identifier {
+  implements = "org.rust.lang.core.psi.ext.RsWeakReferenceElement"
+  mixin = "org.rust.lang.core.psi.ext.RsMacroBodyIdentMixin"
+}
+
 CompactTT ::= (<<any_braces CompactTT>> | <<unpairedToken>>)*
 
 // Used only manually in (external) macro matching code

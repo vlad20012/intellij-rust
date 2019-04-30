@@ -13,6 +13,7 @@ import com.intellij.psi.search.SearchScope
 import com.intellij.psi.util.PsiTreeUtil
 import org.rust.ide.icons.RsIcons
 import org.rust.ide.presentation.getPresentation
+import org.rust.lang.core.macros.isExpandedFromMacro
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.resolve.ref.RsPatBindingReferenceImpl
 import org.rust.lang.core.resolve.ref.RsReference
@@ -75,6 +76,11 @@ abstract class RsPatBindingImplMixin(node: ASTNode) : RsNamedElementImpl(node),
     }
 
     override fun getUseScope(): SearchScope {
+        // If the binding is inside a macro expansion, it can be referenced from other files (from the view of
+        // the platform) because macro expansion is a separate file, so LocalSearchScope can't be used here
+        // (it leads to weird bugs).
+        if (isExpandedFromMacro) return super.getUseScope()
+
         val owner = PsiTreeUtil.getParentOfType(this,
             RsBlock::class.java,
             RsFunction::class.java,

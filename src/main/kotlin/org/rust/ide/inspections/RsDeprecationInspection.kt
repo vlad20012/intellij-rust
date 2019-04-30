@@ -9,10 +9,7 @@ import com.intellij.codeInspection.ProblemHighlightType.LIKE_DEPRECATED
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
-import org.rust.lang.core.psi.RsFile
-import org.rust.lang.core.psi.RsMetaItem
-import org.rust.lang.core.psi.RsModDeclItem
-import org.rust.lang.core.psi.RsVisitor
+import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 
 class RsDeprecationInspection : RsLintInspection() {
@@ -22,8 +19,7 @@ class RsDeprecationInspection : RsLintInspection() {
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor = object : RsVisitor() {
         override fun visitElement(ref: RsElement) {
-            // item is non-inline module declaration or not reference element
-            if (ref is RsModDeclItem || ref !is RsWeakReferenceElement) return
+            if (ref is RsModDeclItem || ref !is RsWeakReferenceElement || ref is RsMacroBodyIdent) return
 
             val original = ref.reference?.resolve() ?: return
             val identifier = ref.referenceNameElement ?: return
