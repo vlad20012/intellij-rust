@@ -1255,7 +1255,7 @@ fun processNestedScopesUpwards(
 
     val prelude = findPrelude(scopeStart)
     if (prelude != null) {
-        val preludeProcessor: (ScopeEntry) -> Boolean = { v -> v.name !in prevScope && processor(v) }
+        val preludeProcessor = processor.withPreCondition { v -> v.name !in prevScope }
         return processItemDeclarationsWithCache(prelude, ns, preludeProcessor, withPrivateImports = false)
     }
 
@@ -1268,10 +1268,10 @@ private inline fun processWithShadowing(
     f: (RsResolveProcessor) -> Boolean
 ): Boolean {
     val currScope = mutableListOf<String>()
-    val shadowingProcessor = { e: ScopeEntry ->
+    val shadowingProcessor = processor.withPreCondition { e ->
         e.name !in prevScope && run {
             currScope += e.name
-            processor(e)
+            true
         }
     }
     return try {

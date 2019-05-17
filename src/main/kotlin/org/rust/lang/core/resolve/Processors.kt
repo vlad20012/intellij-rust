@@ -48,22 +48,48 @@ enum class ScopeEvent : ScopeEntry {
 typealias RsResolveProcessor = (ScopeEntry) -> Boolean
 typealias RsMethodResolveProcessor = (MethodResolveVariant) -> Boolean
 
+inline fun RsResolveProcessor.withPreCondition(crossinline predicate: (ScopeEntry) -> Boolean): RsResolveProcessor {
+    return if (this is RsResolveProcessorEx) {
+        object : RsResolveProcessorEx {
+            override fun invoke(e: ScopeEntry): Boolean {
+                return predicate(e) && this@withPreCondition(e)
+            }
+
+            override val referenceName: String
+                get() = this@withPreCondition.referenceName
+
+        }
+    } else {
+        { e ->
+            predicate(e) && this(e)
+        }
+    }
+}
+
+interface RsResolveProcessorEx : RsResolveProcessor {
+    val referenceName: String
+}
+
 fun collectPathResolveVariants(
     referenceName: String,
     f: (RsResolveProcessor) -> Unit
 ): List<BoundElement<RsElement>> {
     val result = mutableListOf<BoundElement<RsElement>>()
-    f { e ->
-        if ((e == ScopeEvent.STAR_IMPORTS) && result.isNotEmpty()) {
-            return@f true
+    f(object : RsResolveProcessorEx {
+        override fun invoke(e: ScopeEntry): Boolean {
+            if ((e == ScopeEvent.STAR_IMPORTS) && result.isNotEmpty()) {
+                return true
+            }
+
+            if (e.name == referenceName) {
+                val element = e.element ?: return false
+                result += BoundElement(element, e.subst)
+            }
+            return false
         }
 
-        if (e.name == referenceName) {
-            val element = e.element ?: return@f false
-            result += BoundElement(element, e.subst)
-        }
-        false
-    }
+        override val referenceName: String = referenceName
+    })
     return result
 }
 

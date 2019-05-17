@@ -11,6 +11,7 @@ import com.intellij.psi.util.CachedValue
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.util.SmartList
+import gnu.trove.THashMap
 import org.rust.cargo.util.AutoInjectedCrates.CORE
 import org.rust.cargo.util.AutoInjectedCrates.STD
 import org.rust.lang.core.psi.*
@@ -32,7 +33,7 @@ fun processItemOrEnumVariantDeclarations(
             if (processAll(scope.variants, processor)) return true
         }
         is RsMod -> {
-            if (processItemDeclarations(scope, ns, processor, withPrivateImports)) return true
+            if (processItemDeclarationsWithCache(scope, ns, processor, withPrivateImports)) return true
         }
     }
 
@@ -143,7 +144,7 @@ fun processItemDeclarations(
 
         val found = recursionGuard(mod, Computable {
             processItemOrEnumVariantDeclarations(mod, ns,
-                { it.name !in directlyDeclaredNames && originalProcessor(it) },
+                originalProcessor.withPreCondition { it.name !in directlyDeclaredNames },
                 withPrivateImports = basePath != null && isSuperChain(basePath)
             )
         })
@@ -216,8 +217,24 @@ fun processItemDeclarationsWithCache(
             }, withPrivateImports)
             CachedValueProvider.Result.create(scopeEntryList, scope.rustStructureOrAnyPsiModificationTracker)
         }
-        for (e in cached) {
-            if (processor(e)) return true
+        if (processor is RsResolveProcessorEx) {
+            val key_ = if (withPrivateImports) CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_ else CACHED_ITEM_DECLS_
+            val cached_ = CachedValuesManager.getCachedValue(scope, key_) {
+                val scopeEntryList = THashMap<String, SmartList<ScopeEntry>>()
+                for (it in cached) {
+                    scopeEntryList.getOrPut(it.name) { SmartList() }.add(it)
+                }
+                CachedValueProvider.Result.create(scopeEntryList, scope.rustStructureOrAnyPsiModificationTracker)
+            }
+            cached_[processor.referenceName]?.let { v ->
+                for (e in v) {
+                    if (processor(e)) return true
+                }
+            }
+        } else {
+            for (e in cached) {
+                if (processor(e)) return true
+            }
         }
         false
     } else {
@@ -228,6 +245,11 @@ fun processItemDeclarationsWithCache(
 private val CACHED_ITEM_DECLS: Key<CachedValue<List<ScopeEntry>>> =
     Key.create("CACHED_ITEM_DECLS")
 private val CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS: Key<CachedValue<List<ScopeEntry>>> =
+    Key.create("CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS")
+
+private val CACHED_ITEM_DECLS_: Key<CachedValue<Map<String, List<ScopeEntry>>>> =
+    Key.create("CACHED_ITEM_DECLS")
+private val CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_: Key<CachedValue<Map<String, List<ScopeEntry>>>> =
     Key.create("CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS")
 
 object ItemResolutionTestmarks {
