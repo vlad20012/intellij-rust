@@ -32,7 +32,12 @@ fun processItemOrEnumVariantDeclarations(
             if (processAll(scope.variants, processor)) return true
         }
         is RsMod -> {
-            if (processItemDeclarations(scope, ns, processor, withPrivateImports)) return true
+            val ipm = if (withPrivateImports) {
+                ItemProcessingMode.WITH_PRIVATE_IMPORTS
+            } else {
+                ItemProcessingMode.WITHOUT_PRIVATE_IMPORTS
+            }
+            if (processItemDeclarations(scope, ns, processor, ipm)) return true
         }
     }
 
@@ -43,8 +48,10 @@ fun processItemDeclarations(
     scope: RsItemsOwner,
     ns: Set<Namespace>,
     originalProcessor: RsResolveProcessor,
-    withPrivateImports: Boolean
+    ipm: ItemProcessingMode
 ): Boolean {
+    val withPrivateImports = ipm != ItemProcessingMode.WITHOUT_PRIVATE_IMPORTS
+
     val starImports = mutableListOf<RsUseSpeck>()
     val itemImports = mutableListOf<RsUseSpeck>()
 
@@ -127,6 +134,34 @@ fun processItemDeclarations(
     if (originalProcessor(ScopeEvent.STAR_IMPORTS)) {
         return false
     }
+
+    if (ipm != ItemProcessingMode.WITH_PRIVATE_IMPORTS && Namespace.Types in ns && scope is RsMod) {
+        if (scope.isEdition2018 && !scope.isCrateRoot) {
+            val crateRoot = scope.crateRoot
+            if (crateRoot != null) {
+                val result = processWithShadowing(directlyDeclaredNames, processor) { shadowingProcessor ->
+                    crateRoot.processExpandedItemsExceptImpls { item ->
+                        if (item is RsExternCrateItem) {
+                            processExternCrateItem(item, shadowingProcessor, true)
+                        } else {
+                            false
+                        }
+                    }
+                }
+                if (result) return true
+            }
+        }
+
+        // "extern_prelude" feature. Extern crate names can be resolved as if they were in the prelude.
+        // See https://blog.rust-lang.org/2018/10/25/Rust-1.30.0.html#module-system-improvements
+        // See https://github.com/rust-lang/rust/pull/54404/
+        val result = processWithShadowing(directlyDeclaredNames, processor) { shadowingProcessor ->
+            val isCompletion = ipm == ItemProcessingMode.WITH_PRIVATE_IMPORTS_N_EXTERN_CRATES_COMPLETION
+            processExternCrateResolveVariants(scope, isCompletion, shadowingProcessor)
+        }
+        if (result) return true
+    }
+
     for (speck in starImports) {
         val path = speck.path
         val basePath = if (path == null && speck.context is RsUseGroup) {
@@ -217,16 +252,21 @@ fun processItemDeclarationsWithCache(
     scope: RsMod,
     ns: Set<Namespace>,
     processor: RsResolveProcessor,
-    withPrivateImports: Boolean
+    ipm: ItemProcessingMode = ItemProcessingMode.WITH_PRIVATE_IMPORTS
 ): Boolean {
     return if (ns == TYPES) {
-        val key = if (withPrivateImports) CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS else CACHED_ITEM_DECLS
+        val key = when (ipm) {
+            ItemProcessingMode.WITHOUT_PRIVATE_IMPORTS -> CACHED_ITEM_DECLS
+            ItemProcessingMode.WITH_PRIVATE_IMPORTS -> CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS
+            ItemProcessingMode.WITH_PRIVATE_IMPORTS_N_EXTERN_CRATES -> CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_EC
+            ItemProcessingMode.WITH_PRIVATE_IMPORTS_N_EXTERN_CRATES_COMPLETION -> CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_ECC
+        }
         val cached = CachedValuesManager.getCachedValue(scope, key) {
             val scopeEntryList = SmartList<ScopeEntry>()
             processItemDeclarations(scope, TYPES, {
                 scopeEntryList.add(it)
                 false
-            }, withPrivateImports)
+            }, ipm)
             CachedValueProvider.Result.create(scopeEntryList, scope.rustStructureOrAnyPsiModificationTracker)
         }
         for (e in cached) {
@@ -234,7 +274,7 @@ fun processItemDeclarationsWithCache(
         }
         false
     } else {
-        processItemDeclarations(scope, ns, processor, withPrivateImports)
+        processItemDeclarations(scope, ns, processor, ipm)
     }
 }
 
@@ -242,6 +282,10 @@ private val CACHED_ITEM_DECLS: Key<CachedValue<List<ScopeEntry>>> =
     Key.create("CACHED_ITEM_DECLS")
 private val CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS: Key<CachedValue<List<ScopeEntry>>> =
     Key.create("CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS")
+private val CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_EC: Key<CachedValue<List<ScopeEntry>>> =
+    Key.create("CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_EC")
+private val CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_ECC: Key<CachedValue<List<ScopeEntry>>> =
+    Key.create("CACHED_ITEM_DECLS_WITH_PRIVATE_IMPORTS_ECC")
 
 private val RsPath.isAtom: Boolean
     get() = when (kind) {
@@ -249,6 +293,13 @@ private val RsPath.isAtom: Boolean
         PathKind.SELF -> qualifier?.isAtom == true
         else -> false
     }
+
+enum class ItemProcessingMode {
+    WITHOUT_PRIVATE_IMPORTS,
+    WITH_PRIVATE_IMPORTS,
+    WITH_PRIVATE_IMPORTS_N_EXTERN_CRATES,
+    WITH_PRIVATE_IMPORTS_N_EXTERN_CRATES_COMPLETION
+}
 
 object ItemResolutionTestmarks {
     val externCrateSelfWithoutAlias = Testmark("externCrateSelfWithoutAlias")
