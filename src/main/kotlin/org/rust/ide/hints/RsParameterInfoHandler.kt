@@ -7,22 +7,25 @@ package org.rust.ide.hints
 
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.lang.parameterInfo.*
-import com.intellij.openapi.application.runReadAction
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
+import com.intellij.util.concurrency.AppExecutorUtil
 import org.rust.ide.utils.CallInfo
 import org.rust.lang.core.psi.RsCallExpr
+import org.rust.lang.core.psi.RsElementTypes
 import org.rust.lang.core.psi.RsMethodCall
 import org.rust.lang.core.psi.RsValueArgumentList
 import org.rust.lang.core.psi.ext.ancestorStrict
 import org.rust.lang.core.psi.ext.startOffset
-import org.rust.openapiext.computeWithCancelableProgress
 import org.rust.stdext.buildList
+import java.util.concurrent.Callable
 
 /**
  * Provides functions/methods arguments hint.
  */
-class RsParameterInfoHandler : ParameterInfoHandler<PsiElement, RsArgumentsDescription> {
+class RsParameterInfoHandler : ParameterInfoHandler<RsValueArgumentList, RsArgumentsDescription> {
 
     var hintText: String = ""
 
@@ -42,45 +45,50 @@ class RsParameterInfoHandler : ParameterInfoHandler<PsiElement, RsArgumentsDescr
     override fun getParametersForDocumentation(p: RsArgumentsDescription, context: ParameterInfoContext?) =
         p.arguments
 
-    override fun findElementForParameterInfo(context: CreateParameterInfoContext): PsiElement? {
+    override fun findElementForParameterInfo(context: CreateParameterInfoContext): RsValueArgumentList? {
+        val contextElement = context.file.findElementAt(context.editor.caretModel.offset) ?: return null
+        val element = findElementForParameterInfo(contextElement) ?: return null
+
+        ReadAction.nonBlocking(Callable {
+            RsArgumentsDescription.findDescription(element)
+        }).finishOnUiThread(ModalityState.defaultModalityState()) { argsDescr ->
+            if (argsDescr != null) {
+                context.itemsToShow = arrayOf(argsDescr)
+                showParameterInfo(element, context)
+            }
+        }.submit(AppExecutorUtil.getAppExecutorService())
+
+//        val argsDescr = RsArgumentsDescription.findDescription(element) ?: return null
+//        context.itemsToShow = arrayOf(argsDescr)
+
+        return null
+    }
+
+    override fun findElementForUpdatingParameterInfo(context: UpdateParameterInfoContext): RsValueArgumentList? {
         val contextElement = context.file.findElementAt(context.editor.caretModel.offset) ?: return null
         return findElementForParameterInfo(contextElement)
     }
 
-    override fun findElementForUpdatingParameterInfo(context: UpdateParameterInfoContext) =
-        context.file.findElementAt(context.editor.caretModel.offset)
-
-    override fun showParameterInfo(element: PsiElement, context: CreateParameterInfoContext) {
-        if (element !is RsValueArgumentList) return
-        val argsDescr = element.project.computeWithCancelableProgress("Preparing parameter info...") {
-            runReadAction {
-                RsArgumentsDescription.findDescription(element)
-            }
-        } ?: return
-
-        context.itemsToShow = arrayOf(argsDescr)
+    override fun showParameterInfo(element: RsValueArgumentList, context: CreateParameterInfoContext) {
         context.showHint(element, element.startOffset, this)
     }
 
-    override fun updateParameterInfo(place: PsiElement, context: UpdateParameterInfoContext) {
-        val argIndex = place.project.computeWithCancelableProgress("Preparing parameter info...") {
-            runReadAction {
-                findArgumentIndex(place)
-            }
-        }
-        if (argIndex == INVALID_INDEX) {
+    override fun updateParameterInfo(parameterOwner: RsValueArgumentList, context: UpdateParameterInfoContext) {
+        if (context.parameterOwner != parameterOwner) {
             context.removeHint()
             return
         }
-        context.setCurrentParameter(argIndex)
-        when {
-            context.parameterOwner == null -> context.parameterOwner = place
-            context.parameterOwner != findElementForParameterInfo(place) -> {
-                context.removeHint()
-                return
-            }
-        }
-        context.objectsToView.indices.map { context.setUIComponentEnabled(it, true) }
+        val currentParameterIndex = ParameterInfoUtils.getCurrentParameterIndex(parameterOwner.node, context.offset, RsElementTypes.COMMA)
+        context.setCurrentParameter(currentParameterIndex)
+//        context.setCurrentParameter(argIndex)
+//        when {
+//            context.parameterOwner == null -> context.parameterOwner = parameterOwner
+//            context.parameterOwner != findElementForParameterInfo(parameterOwner) -> {
+//                context.removeHint()
+//                return
+//            }
+//        }
+//        context.objectsToView.indices.map { context.setUIComponentEnabled(it, true) }
     }
 
     override fun updateUI(p: RsArgumentsDescription?, context: ParameterInfoUIContext) {
