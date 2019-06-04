@@ -20,9 +20,11 @@ import com.intellij.util.SmartList
 import org.rust.lang.core.parser.RustParser
 import org.rust.lang.core.parser.RustParserUtil.collapsedTokenType
 import org.rust.lang.core.parser.createRustPsiBuilder
+import org.rust.lang.core.parser.rawLookupText
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.RsElementTypes.IDENTIFIER
 import org.rust.lang.core.psi.ext.*
+import org.rust.lang.doc.psi.RsDocKind
 import org.rust.openapiext.Testmark
 import org.rust.openapiext.forEachChild
 import org.rust.stdext.joinToWithBuffer
@@ -120,7 +122,8 @@ class MacroExpander(val project: Project) {
         def: RsMacro,
         call: RsMacroCall
     ): Pair<RsMacroCase, MacroSubstitution>? {
-        val macroCallBody = project.createRustPsiBuilder(call.macroBody ?: return null)
+        val macroCallBody = project.createRustPsiBuilder(call.macroBody ?: return null).lowerDocComments()
+        macroCallBody.eof() // skip whitespace
         var start = macroCallBody.mark()
         val macroCaseList = def.macroBodyStubbed?.macroCaseList ?: return null
 
@@ -143,6 +146,44 @@ class MacroExpander(val project: Project) {
         if (!substituteMacro(sb, ranges, root, subst)) return null
         return sb to RangeMap.from(ranges)
     }
+    /** Rustc replaces doc comments like `/// foo` to attributes `#[doc = "foo"]` before macro expansion */
+    private fun PsiBuilder.lowerDocComments(): PsiBuilder {
+        if (!hasDocComments()) return this
+
+        MacroExpansionMarks.docsLowering.hit()
+
+        val sb = StringBuffer((originalText.length * 1.1).toInt())
+
+        var i = 0
+        while (true) {
+            val token = rawLookup(i) ?: break
+            val text = rawLookupText(i)
+            i++
+
+            if (token in RS_DOC_COMMENTS) {
+                // TODO We should calculate how many `#` we should insert
+                sb.append("#[doc=r#\"")
+                RsDocKind.of(token).removeDecoration(text.splitToSequence("\n")).joinTo(sb, separator = "\n")
+                sb.append("\"#]")
+            } else {
+                sb.append(text)
+            }
+        }
+
+        return this@MacroExpander.project.createRustPsiBuilder(sb)
+    }
+
+    private fun PsiBuilder.hasDocComments(): Boolean {
+        var i = 0
+        while (true) {
+            val token = rawLookup(i++) ?: break
+            if (token in RS_DOC_COMMENTS) return true
+        }
+        return false
+    }
+
+    private fun substituteMacro(root: PsiElement, subst: WithParent): CharSequence? =
+        buildString { if (!substituteMacro(this, root, subst)) return null }
 
     private fun substituteMacro(
         sb: StringBuilder,
@@ -522,4 +563,5 @@ object MacroExpansionMarks {
     val groupInputEnd2 = Testmark("groupInputEnd2")
     val groupInputEnd3 = Testmark("groupInputEnd3")
     val groupMatchedEmptyTT = Testmark("groupMatchedEmptyTT")
+    val docsLowering = Testmark("docsLowering")
 }
