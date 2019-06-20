@@ -101,7 +101,7 @@ private data class MetaVarValue(
 
 class MacroExpander(val project: Project) {
     fun expandMacroAsText(def: RsMacro, call: RsMacroCall): Pair<CharSequence, RangeMap>? {
-        val (case, subst) = findMatchingPattern(def, call) ?: return null
+        val (case, subst, loweringRanges) = findMatchingPattern(def, call) ?: return null
         val macroExpansion = case.macroExpansion ?: return null
 
         val substWithGlobalVars = WithParent(
@@ -115,14 +115,16 @@ class MacroExpander(val project: Project) {
             )
         )
 
-        return substituteMacro(macroExpansion.macroExpansionContents, substWithGlobalVars)
+        return substituteMacro(macroExpansion.macroExpansionContents, substWithGlobalVars)?.let { (text, ranges) ->
+            text to loweringRanges.mapAll(ranges)
+        }
     }
 
     private fun findMatchingPattern(
         def: RsMacro,
         call: RsMacroCall
-    ): Pair<RsMacroCase, MacroSubstitution>? {
-        val macroCallBody = project.createRustPsiBuilder(call.macroBody ?: return null).lowerDocComments()
+    ): Triple<RsMacroCase, MacroSubstitution, RangeMap>? {
+        val (macroCallBody, ranges) = project.createRustPsiBuilder(call.macroBody ?: return null).lowerDocComments()
         macroCallBody.eof() // skip whitespace
         var start = macroCallBody.mark()
         val macroCaseList = def.macroBodyStubbed?.macroCaseList ?: return null
@@ -130,7 +132,7 @@ class MacroExpander(val project: Project) {
         for (case in macroCaseList) {
             val subst = case.pattern.match(macroCallBody)
             if (subst != null) {
-                return case to subst
+                return Triple(case, subst, ranges)
             } else {
                 start.rollbackTo()
                 start = macroCallBody.mark()
@@ -140,24 +142,24 @@ class MacroExpander(val project: Project) {
         return null
     }
 
-    private fun substituteMacro(root: PsiElement, subst: WithParent): Pair<CharSequence, RangeMap>? {
-        val sb = StringBuilder()
-        val ranges = SmartList<MappedTextRange>()
-        if (!substituteMacro(sb, ranges, root, subst)) return null
-        return sb to RangeMap.from(ranges)
-    }
     /** Rustc replaces doc comments like `/// foo` to attributes `#[doc = "foo"]` before macro expansion */
-    private fun PsiBuilder.lowerDocComments(): PsiBuilder {
-        if (!hasDocComments()) return this
+    private fun PsiBuilder.lowerDocComments(): Pair<PsiBuilder, RangeMap> {
+        if (!hasDocComments()) return this to if (originalText.isNotEmpty()) {
+            RangeMap.from(SmartList(MappedTextRange(0, 0, originalText.length)))
+        } else {
+            RangeMap.EMPTY
+        }
 
         MacroExpansionMarks.docsLowering.hit()
 
         val sb = StringBuffer((originalText.length * 1.1).toInt())
+        val ranges = SmartList<MappedTextRange>()
 
         var i = 0
         while (true) {
             val token = rawLookup(i) ?: break
             val text = rawLookupText(i)
+            val start = rawTokenTypeStart(i)
             i++
 
             if (token in RS_DOC_COMMENTS) {
@@ -166,11 +168,12 @@ class MacroExpander(val project: Project) {
                 RsDocKind.of(token).removeDecoration(text.splitToSequence("\n")).joinTo(sb, separator = "\n")
                 sb.append("\"#]")
             } else {
+                ranges.mergeAdd(MappedTextRange(start, sb.length, text.length))
                 sb.append(text)
             }
         }
 
-        return this@MacroExpander.project.createRustPsiBuilder(sb)
+        return this@MacroExpander.project.createRustPsiBuilder(sb) to RangeMap.from(ranges)
     }
 
     private fun PsiBuilder.hasDocComments(): Boolean {
@@ -182,8 +185,12 @@ class MacroExpander(val project: Project) {
         return false
     }
 
-    private fun substituteMacro(root: PsiElement, subst: WithParent): CharSequence? =
-        buildString { if (!substituteMacro(this, root, subst)) return null }
+    private fun substituteMacro(root: PsiElement, subst: WithParent): Pair<CharSequence, RangeMap>? {
+        val sb = StringBuilder()
+        val ranges = SmartList<MappedTextRange>()
+        if (!substituteMacro(sb, ranges, root, subst)) return null
+        return sb to RangeMap.from(ranges)
+    }
 
     private fun substituteMacro(
         sb: StringBuilder,
@@ -207,11 +214,11 @@ class MacroExpander(val project: Project) {
                         sb.safeAppend(value.value)
                     }
                     if (value.offsetInCallBody != -1 && value.value.isNotEmpty()) {
-                        ranges += MappedTextRange(
+                        ranges.mergeAdd(MappedTextRange(
                             value.offsetInCallBody,
                             sb.length - value.value.length - if (parensNeeded) 1 else 0,
                             value.value.length
-                        )
+                        ))
                     }
                 }
                 is RsMacroExpansionReferenceGroup -> {
@@ -242,6 +249,23 @@ class MacroExpander(val project: Project) {
             append(" ")
         }
         append(str)
+    }
+
+    private fun MutableList<MappedTextRange>.mergeAdd(range: MappedTextRange) {
+        val last = lastOrNull() ?: run {
+            add(range)
+            return
+        }
+
+        if (last.srcEndOffset == range.srcOffset && last.dstEndOffset == range.dstOffset) {
+            set(size - 1, MappedTextRange(
+                last.srcOffset,
+                last.dstOffset,
+                last.length + range.length
+            ))
+        } else {
+            add(range)
+        }
     }
 }
 

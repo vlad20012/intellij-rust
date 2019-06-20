@@ -6,6 +6,7 @@
 package org.rust.lang.core.macros
 
 import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import org.rust.lang.core.psi.RsFile
 import org.rust.lang.core.psi.RsMacroArgument
@@ -126,14 +127,15 @@ private fun mapOffsetFromCallBodyToExpansion(
 }
 
 private fun Int.toBodyRelativeOffset(call: RsMacroCall): Int? {
-    val macroOffset = call.macroArgument?.compactTT?.startOffset ?: return null
+    val macroOffset = call.macroArgument?.startOffset?.let { it + 1 } ?: return null
     val elementOffset = this - macroOffset
     check(elementOffset >= 0)
     return elementOffset
 }
 
 private fun Int.fromBodyRelativeOffset(call: RsMacroCall): Int? {
-    val macroRange = call.macroArgument?.compactTT?.textRange ?: return null
+    val macroRange = call.macroArgument?.textRange?.let { TextRange(it.startOffset + 1, it.endOffset - 1) }
+        ?: return null
     val elementOffset = this + macroRange.startOffset
     check(elementOffset <= macroRange.endOffset)
     return elementOffset
