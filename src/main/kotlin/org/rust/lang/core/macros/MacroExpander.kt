@@ -25,10 +25,17 @@ import org.rust.lang.core.psi.RsElementTypes.IDENTIFIER
 import org.rust.lang.core.psi.ext.*
 import org.rust.openapiext.Testmark
 import org.rust.openapiext.forEachChild
+import org.rust.stdext.buildMap
 import org.rust.stdext.joinToWithBuffer
 import org.rust.stdext.mapNotNullToSet
 import java.util.*
-import java.util.Collections.singletonMap
+import kotlin.text.StringBuilder
+import kotlin.text.first
+import kotlin.text.isEmpty
+import kotlin.text.isNotEmpty
+import kotlin.text.isWhitespace
+import kotlin.text.last
+import kotlin.text.substring
 
 private data class MacroSubstitution(
     /**
@@ -99,14 +106,23 @@ private data class MetaVarValue(
 
 class MacroExpander(val project: Project) {
     fun expandMacroAsText(def: RsMacro, call: RsMacroCall): Pair<CharSequence, RangeMap>? {
-        val (case, subst) = findMatchingPattern(def, call) ?: return null
+        val (case, match) = findMatchingPattern(def, call) ?: return null
         val macroExpansion = case.macroExpansion ?: return null
 
         val substWithGlobalVars = WithParent(
-            subst,
+            match.subst,
             WithParent(
                 MacroSubstitution(
-                    singletonMap("crate", MetaVarValue(expandDollarCrateVar(call, def), "", -1)),
+                    buildMap {
+                        put("crate", MetaVarValue(expandDollarCrateVar(call, def), "", -1))
+                        if (match is MatchResult.Match.Partial) {
+                            for (binding in case.bindings) {
+                                val (name, type) = binding.nameAndType ?: continue
+                                val text = placeholderForFragmentType(type)
+                                put(name, MetaVarValue(text, type, -1))
+                            }
+                        }
+                    },
                     emptyList()
                 ),
                 null
@@ -119,22 +135,35 @@ class MacroExpander(val project: Project) {
     private fun findMatchingPattern(
         def: RsMacro,
         call: RsMacroCall
-    ): Pair<RsMacroCase, MacroSubstitution>? {
+    ): Pair<RsMacroCase, MatchResult.Match>? {
         val macroCallBody = project.createRustPsiBuilder(call.macroBody ?: return null)
         var start = macroCallBody.mark()
         val macroCaseList = def.macroBodyStubbed?.macroCaseList ?: return null
 
+        var partiallyMatched = false
+        var partiallyMatch: Pair<RsMacroCase, MatchResult.Match>? = null
+
+
         for (case in macroCaseList) {
-            val subst = case.pattern.match(macroCallBody)
-            if (subst != null) {
-                return case to subst
+            val result = case.pattern.match(macroCallBody)
+            if (result is MatchResult.Match.Full) {
+                return case to result
             } else {
+                if (result is MatchResult.Match.Partial) {
+                    if (!partiallyMatched) {
+                        partiallyMatched = true
+                        partiallyMatch = case to result
+                    } else {
+                        // multiple partial matches found
+                        partiallyMatch = null
+                    }
+                }
                 start.rollbackTo()
                 start = macroCallBody.mark()
             }
         }
 
-        return null
+        return partiallyMatch
     }
 
     private fun substituteMacro(root: PsiElement, subst: WithParent): Pair<CharSequence, RangeMap>? {
@@ -202,6 +231,22 @@ class MacroExpander(val project: Project) {
         }
         append(str)
     }
+
+    /**
+     * In the case of partial macro expansion we replace uninitialized metavars with such placeholders
+     * to make macro expansion be parsed successfully.
+     * */
+    private fun placeholderForFragmentType(type: String): String {
+        return when (type) {
+            "ident", "path", "expr", "ty", "pat", "stmt", "meta" -> "IntellijRustPlaceholder"
+            "block" -> "{ IntellijRustPlaceholder; }"
+            "item" -> "struct IntellijRustPlaceholder;"
+            "vis" -> ""
+            "lifetime" -> "'IntellijRustPlaceholder"
+            "literal" -> "\"IntellijRustPlaceholder\""
+            else -> ""
+        }
+    }
 }
 
 /**
@@ -255,14 +300,22 @@ private fun expandDollarCrateVar(call: RsMacroCall, def: RsMacro): String {
 /** Prefix for synthetic identifier produced from `$crate` metavar. See [expandDollarCrateVar] */
 const val MACRO_CRATE_IDENTIFIER_PREFIX: String = "IntellijRustDollarCrate_"
 
+private sealed class MatchResult {
+    sealed class Match(val subst: MacroSubstitution) : MatchResult() {
+        class Full(subst: MacroSubstitution): Match(subst)
+        class Partial(subst: MacroSubstitution): Match(subst)
+    }
+    object Error : MatchResult()
+}
+
 private class MacroPattern private constructor(
     val pattern: Sequence<PsiElement>
 ) {
-    fun match(macroCallBody: PsiBuilder): MacroSubstitution? {
-        return matchPartial(macroCallBody)?.let { result ->
+    fun match(macroCallBody: PsiBuilder): MatchResult {
+        return matchPartial(macroCallBody).let { result ->
             if (!macroCallBody.eof()) {
                 MacroExpansionMarks.failMatchPatternByExtraInput.hit()
-                null
+                MatchResult.Error
             } else {
                 result
             }
@@ -271,38 +324,42 @@ private class MacroPattern private constructor(
 
     private fun isEmpty() = pattern.firstOrNull() == null
 
-    private fun matchPartial(macroCallBody: PsiBuilder): MacroSubstitution? {
+    private fun matchPartial(macroCallBody: PsiBuilder): MatchResult {
         ProgressManager.checkCanceled()
         val map = HashMap<String, MetaVarValue>()
         val groups = mutableListOf<MacroGroup>()
 
-        for (psi in pattern) {
+        val iter = pattern.iterator()
+        for (psi in iter) {
             when (psi) {
                 is RsMacroBinding -> {
-                    val name = psi.metaVarIdentifier.text ?: return null
-                    val type = psi.fragmentSpecifier ?: return null
+                    val (name, type) = psi.nameAndType ?: return MatchResult.Error
 
                     val lastOffset = macroCallBody.currentOffset
                     val parsed = parse(macroCallBody, type)
                     if (!parsed || (lastOffset == macroCallBody.currentOffset && type != "vis")) {
                         MacroExpansionMarks.failMatchPatternByBindingType.hit()
-                        return null
+                        return MatchResult.Error
                     }
                     val text = macroCallBody.originalText.substring(lastOffset, macroCallBody.currentOffset)
                     map[name] = MetaVarValue(text, type, lastOffset)
                 }
                 is RsMacroBindingGroup -> {
-                    groups += MacroGroup(psi, matchGroup(psi, macroCallBody) ?: return null)
+                    groups += MacroGroup(psi, matchGroup(psi, macroCallBody) ?: return MatchResult.Error)
                 }
                 else -> {
                     if (!macroCallBody.isSameToken(psi)) {
                         MacroExpansionMarks.failMatchPatternByToken.hit()
-                        return null
+                        return if (macroCallBody.eof()) {
+                            MatchResult.Match.Partial(MacroSubstitution(map, groups))
+                        } else {
+                            MatchResult.Error
+                        }
                     }
                 }
             }
         }
-        return MacroSubstitution(map, groups)
+        return MatchResult.Match.Full(MacroSubstitution(map, groups))
     }
 
     private fun parse(builder: PsiBuilder, type: String): Boolean {
@@ -356,12 +413,12 @@ private class MacroPattern private constructor(
 
             val lastOffset = macroCallBody.currentOffset
             val result = pattern.matchPartial(macroCallBody)
-            if (result != null) {
+            if (result is MatchResult.Match.Full) {
                 if (macroCallBody.currentOffset == lastOffset) {
                     MacroExpansionMarks.groupMatchedEmptyTT.hit()
                     return null
                 }
-                groups += result
+                groups += result.subst
             } else {
                 MacroExpansionMarks.groupInputEnd2.hit()
                 mark?.rollbackTo()
@@ -461,6 +518,16 @@ private class MacroPattern private constructor(
 
 private val RsMacroCase.pattern: MacroPattern
     get() = MacroPattern.valueOf(macroPattern.macroPatternContents)
+
+private val RsMacroCase.bindings: Collection<RsMacroBinding>
+    get() = macroPattern.macroPatternContents.descendantsOfType()
+
+private val RsMacroBinding.nameAndType: Pair<String, String>?
+    get() {
+        val name = metaVarIdentifier.text ?: return null
+        val type = fragmentSpecifier ?: return null
+        return name to type
+    }
 
 private fun PsiBuilder.isSameToken(psi: PsiElement): Boolean {
     val (elementType, size) = collapsedTokenType(this) ?: (tokenType to 1)
