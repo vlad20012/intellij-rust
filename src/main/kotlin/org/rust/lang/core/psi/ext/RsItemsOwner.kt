@@ -12,10 +12,7 @@ import com.intellij.psi.util.CachedValue
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.util.SmartList
-import org.rust.lang.core.psi.RsFile
-import org.rust.lang.core.psi.RsImplItem
-import org.rust.lang.core.psi.RsMacroCall
-import org.rust.lang.core.psi.rustStructureOrAnyPsiModificationTracker
+import org.rust.lang.core.psi.*
 
 interface RsItemsOwner : RsElement
 
@@ -69,8 +66,9 @@ private fun RsItemsOwner.processExpandedItemsInternal(processor: (RsItemElement)
     return itemsAndMacros.any { it.processItem(processor) }
 }
 
-private fun RsElement.processItem(processor: (RsItemElement) -> Boolean) = when (this) {
+private fun RsElement.processItem(processor: (RsItemElement) -> Boolean): Boolean = when (this) {
     is RsMacroCall -> processExpansionRecursively { it is RsItemElement && processor(it) }
+    is RsMacroStmt -> macroCall.processItem(processor)
     is RsItemElement -> processor(this)
     else -> false
 }

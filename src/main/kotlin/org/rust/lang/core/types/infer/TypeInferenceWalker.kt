@@ -124,6 +124,10 @@ class RsTypeInferenceWalker(
             inferredTy == TyNever
         }
         is RsExprStmt -> psi.expr.inferType() == TyNever
+        is RsMacroStmt -> {
+            inferMacroExprType(psi.macroCall, null)
+            false
+        }
         else -> false
     }
 
@@ -1079,9 +1083,12 @@ class RsTypeInferenceWalker(
         return result
     }
 
-    private fun inferMacroExprType(macroExpr: RsMacroExpr, expected: Ty?): Ty {
-        val name = macroExpr.macroCall.macroName
-        val exprArg = macroExpr.macroCall.exprMacroArgument
+    private fun inferMacroExprType(macroExpr: RsMacroExpr, expected: Ty?): Ty =
+        inferMacroExprType(macroExpr.macroCall, expected)
+
+    private fun inferMacroExprType(macroCall: RsMacroCall, expected: Ty?): Ty {
+        val name = macroCall.macroName
+        val exprArg = macroCall.exprMacroArgument
         if (exprArg != null) {
             val expr = exprArg.expr ?: return TyUnknown
             return when (name) {
@@ -1095,7 +1102,7 @@ class RsTypeInferenceWalker(
             }
         }
 
-        val vecArg = macroExpr.macroCall.vecMacroArgument
+        val vecArg = macroCall.vecMacroArgument
         if (vecArg != null) {
             val expectedElemTy = (expected as? TyAdt)?.takeIf { it.item == items.Vec }?.typeArguments?.getOrNull(0)
             val elementType = if (vecArg.semicolon != null) {
@@ -1120,7 +1127,7 @@ class RsTypeInferenceWalker(
             return items.findVecForElementTy(elementType)
         }
 
-        inferChildExprsRecursively(macroExpr.macroCall)
+        inferChildExprsRecursively(macroCall)
         return when {
             "print" in name || "assert" in name -> TyUnit
             name == "format" -> items.String.asTy()
@@ -1137,9 +1144,9 @@ class RsTypeInferenceWalker(
             name == "cfg" -> TyBool
             name == "unimplemented" || name == "unreachable" || name == "panic" -> TyNever
             name == "write" || name == "writeln" -> {
-                (macroExpr.macroCall.expansion as? MacroExpansion.Expr)?.expr?.inferType() ?: TyUnknown
+                (macroCall.expansion as? MacroExpansion.Expr)?.expr?.inferType() ?: TyUnknown
             }
-            macroExpr.macroCall.formatMacroArgument != null || macroExpr.macroCall.logMacroArgument != null -> TyUnit
+            macroCall.formatMacroArgument != null || macroCall.logMacroArgument != null -> TyUnit
 
             else -> TyUnknown
         }

@@ -87,4 +87,6 @@ fn foo() {
 
     let mut macro_rules = 0;
     macro_rules += 1;
+
+    foo!() + foo!();
 }

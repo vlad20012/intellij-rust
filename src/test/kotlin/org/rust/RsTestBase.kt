@@ -28,6 +28,7 @@ import org.rust.cargo.project.model.cargoProjects
 import org.rust.cargo.project.workspace.CargoWorkspace
 import org.rust.cargo.toolchain.RustChannel
 import org.rust.cargo.toolchain.RustcVersion
+import org.rust.lang.core.macros.findExpansionElements
 import org.rust.lang.core.macros.macroExpansionManager
 import org.rust.lang.core.psi.ext.ancestorOrSelf
 import org.rust.openapiext.saveAllDocuments
@@ -241,7 +242,9 @@ abstract class RsTestBase : LightPlatformCodeInsightFixtureTestCase(), RsTestCas
             val markerPosition = myFixture.editor.offsetToLogicalPosition(markerOffset + caretMarker.length - 1)
             val previousLine = LogicalPosition(markerPosition.line - 1, markerPosition.column)
             val elementOffset = myFixture.editor.logicalPositionToOffset(previousLine)
-            val elementAtMarker = myFixture.file.findElementAt(elementOffset)!!
+            val elementAtMarker = myFixture.file.findElementAt(elementOffset)!!.let {
+                it.findExpansionElements()?.singleOrNull() ?: it
+            }
             val element = elementAtMarker.ancestorOrSelf<T>()
             if (element != null) {
                 result.add(Triple(element, data, elementOffset))

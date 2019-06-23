@@ -16,11 +16,9 @@ enum class MacroExpansionContext {
 }
 
 val RsMacroCall.expansionContext: MacroExpansionContext
-    get() = when (val context = context) {
-        is RsMacroExpr -> when {
-            context.context is RsExprStmt -> MacroExpansionContext.STMT
-            else -> MacroExpansionContext.EXPR
-        }
+    get() = when (context) {
+        is RsMacroExpr -> MacroExpansionContext.EXPR
+        is RsMacroStmt -> MacroExpansionContext.STMT
         is RsPatMacro -> MacroExpansionContext.PAT
         is RsMacroType -> MacroExpansionContext.TYPE
         else -> MacroExpansionContext.ITEM
