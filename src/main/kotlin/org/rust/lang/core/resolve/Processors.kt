@@ -8,7 +8,10 @@ package org.rust.lang.core.resolve
 import com.intellij.codeInsight.completion.CompletionResultSet
 import com.intellij.util.SmartList
 import org.rust.lang.core.completion.createLookupElement
+import org.rust.lang.core.macros.findElementExpandedFromUnchecked
 import org.rust.lang.core.psi.RsFunction
+import org.rust.lang.core.psi.RsPatBinding
+import org.rust.lang.core.psi.RsPath
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.ref.MethodResolveVariant
 import org.rust.lang.core.types.BoundElement
@@ -92,6 +95,31 @@ fun <T : ScopeEntry> collectResolveVariantsAsScopeEntries(referenceName: String,
         if (e.name == referenceName) {
             // de-lazying. See `RsResolveProcessor.lazy`
             e.element ?: return@f false
+            result += e
+        }
+        false
+    }
+    return result
+}
+
+fun <T : ScopeEntry> collectResolveVariantsAsScopeEntries1(path: RsPath, f: ((T) -> Boolean) -> Unit): List<T> {
+    val referenceName = path.referenceName
+    val referenceNameElement = path.referenceNameElement
+    val isExpansion = (referenceNameElement.findElementExpandedFromUnchecked() ?: referenceNameElement).containingFile
+    val result = mutableListOf<T>()
+    f { e ->
+        if ((e == ScopeEvent.STAR_IMPORTS) && result.isNotEmpty()) {
+            return@f true
+        }
+
+        if (e.name == referenceName) {
+            // de-lazying. See `RsResolveProcessor.lazy`
+            val element = e.element ?: return@f false
+            if (element is RsPatBinding) {
+                val nameIdentifier =  element.nameIdentifier ?: return@f false
+                val isExpansion2 = (nameIdentifier.findElementExpandedFromUnchecked() ?: nameIdentifier).containingFile
+                if (isExpansion != isExpansion2) return@f false
+            }
             result += e
         }
         false

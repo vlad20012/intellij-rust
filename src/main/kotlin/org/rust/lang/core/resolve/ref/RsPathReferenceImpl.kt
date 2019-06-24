@@ -75,7 +75,7 @@ class RsPathReferenceImpl(
 }
 
 fun resolvePathRaw(path: RsPath, lookup: ImplLookup): List<ScopeEntry> {
-    return collectResolveVariantsAsScopeEntries(path.referenceName) {
+    return collectResolveVariantsAsScopeEntries1(path) {
         processPathResolveVariants(lookup, path, false, it)
     }
 }

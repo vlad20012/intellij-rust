@@ -1227,8 +1227,32 @@ private fun processLexicalDeclarations(
                     }
                 }
 
-                for (stmt in scope.stmtList.asReversed()) {
-                    val pat = (stmt as? RsLetDecl)?.pat ?: continue
+                fun processExpandedStmts(stmts: List<RsExpandedElement>, processor: (RsExpandedElement) -> Boolean): Boolean {
+                    for (stmt in stmts) {
+                        val result = when (stmt) {
+                            is RsMacroStmt -> when (val expansion = stmt.macroCall.expansion) {
+                                is MacroExpansion.Stmts -> processExpandedStmts(expansion.elements, processor)
+                                else -> false
+                            }
+                            else -> processor(stmt)
+                        }
+                        if (result) return true
+                    }
+                    return false
+                }
+
+                val stmts = mutableListOf<RsLetDecl>()
+                processExpandedStmts(scope.stmtList) { stmt ->
+                    if (cameFrom == stmt) {
+                        true
+                    } else {
+                        if (stmt is RsLetDecl) stmts.add(stmt)
+                        false
+                    }
+                }
+
+                for (stmt in stmts.asReversed()) {
+                    val pat = stmt.pat ?: continue
                     if (PsiUtilCore.compareElementsByPosition(cameFrom, stmt) < 0) continue
                     if (stmt == cameFrom) continue
                     if (processPattern(pat, shadowingProcessor)) return true

@@ -81,6 +81,11 @@ fun PsiElement.findElementExpandedFrom(): PsiElement? {
     return mappedElement.findElementExpandedFrom() ?: mappedElement.takeIf { !it.isExpandedFromMacro }
 }
 
+fun PsiElement.findElementExpandedFromUnchecked(): PsiElement? {
+    val mappedElement = findElementExpandedFromNonRecursive() ?: return null
+    return mappedElement.findElementExpandedFrom() ?: mappedElement
+}
+
 private fun PsiElement.findElementExpandedFromNonRecursive(): PsiElement? {
     val call = findMacroCallExpandedFromNonRecursive() ?: return null
     val mappedOffset = mapOffsetFromExpansionToCallBody(call, startOffset) ?: return null

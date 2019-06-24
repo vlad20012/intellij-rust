@@ -431,4 +431,59 @@ class RsMacroExpansionResolveTest : RsResolveTestBase() {
             let _ = foo();
         }         //^
     """)
+
+    fun `test resolve binding from stmt context macro`() = checkByCode("""
+        macro_rules! foo {
+            ($ i:stmt) => ( $ i )
+        }
+        fn main() {
+            foo! {
+                let a = 0;
+            }     //X
+            let _ = a;
+        }         //^
+    """)
+
+    fun `test hygiene`() = checkByCode("""
+        macro_rules! foo {
+            () => ( let a = 0; )
+        }
+        fn main() {
+            foo!();
+            let _ = a;
+        }         //^ unresolved
+    """)
+
+    fun `test hygiene 2`() = checkByCode("""
+        macro_rules! foo {
+            ($ i:ident) => ( let $ i = 0; )
+        }
+        macro_rules! bar {
+            ($($ t:tt)*) => { $($ t)* };
+        }
+        fn main() {
+            bar! {
+                foo!(a);
+                   //X
+                let _ = a;
+            }         //^
+        }
+    """)
+
+    fun `test hygiene 3`() = checkByCode("""
+        macro_rules! foo {
+            () => ( let a = 0; )
+        }
+        macro_rules! bar {
+            ($($ t:tt)*) => { $($ t)* };
+        }
+        fn main() {
+            let a = 0;
+              //X
+            bar! {
+                foo!();
+                let _ = a;
+            }         //^
+        }
+    """)
 }
