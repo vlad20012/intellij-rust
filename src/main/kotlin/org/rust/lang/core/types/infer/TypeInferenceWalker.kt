@@ -94,8 +94,14 @@ class RsTypeInferenceWalker(
 
     private fun RsBlock.inferType(expected: Ty? = null, coerce: Boolean = false): Ty {
         var isDiverging = false
-        for (stmt in stmtList) {
-            isDiverging = processStatement(stmt) || isDiverging
+        for (stmt in expandedStmts) {
+            val result = when (stmt) {
+                is RsStmt -> processStatement(stmt)
+                // Tail expr from a stmt macro
+                is RsExpr -> stmt.inferType() == TyNever
+                else -> false
+            }
+            isDiverging = result || isDiverging
         }
         val type = (if (coerce) expr?.inferTypeCoercableTo(expected!!) else expr?.inferType(expected)) ?: TyUnit
         return if (isDiverging) TyNever else type
@@ -1143,12 +1149,12 @@ class RsTypeInferenceWalker(
             name == "module_path" -> TyReference(TyStr, Mutability.IMMUTABLE)
             name == "cfg" -> TyBool
             name == "unimplemented" || name == "unreachable" || name == "panic" -> TyNever
-            name == "write" || name == "writeln" -> {
+            (macroCall.formatMacroArgument != null || macroCall.logMacroArgument != null) &&
+                name != "write" && name != "writeln"-> TyUnit
+
+            else -> {
                 (macroCall.expansion as? MacroExpansion.Expr)?.expr?.inferType() ?: TyUnknown
             }
-            macroCall.formatMacroArgument != null || macroCall.logMacroArgument != null -> TyUnit
-
-            else -> TyUnknown
         }
     }
 

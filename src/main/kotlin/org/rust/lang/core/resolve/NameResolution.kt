@@ -17,7 +17,10 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.StubBasedPsiElement
 import com.intellij.psi.stubs.StubElement
-import com.intellij.psi.util.*
+import com.intellij.psi.util.CachedValue
+import com.intellij.psi.util.CachedValueProvider
+import com.intellij.psi.util.CachedValuesManager
+import com.intellij.psi.util.PsiTreeUtil
 import org.rust.cargo.project.workspace.CargoWorkspace
 import org.rust.cargo.project.workspace.PackageOrigin
 import org.rust.cargo.util.AutoInjectedCrates.CORE
@@ -617,7 +620,7 @@ fun processLifetimeResolveVariants(lifetime: RsLifetime, processor: RsResolvePro
 
 fun processLocalVariables(place: RsElement, processor: (RsPatBinding) -> Unit) {
     walkUp(place, { it is RsItemElement }) { cameFrom, scope ->
-        processLexicalDeclarations(scope, cameFrom, VALUES, ItemProcessingMode.WITH_PRIVATE_IMPORTS) { v ->
+        processLexicalDeclarations(scope, cameFrom, VALUES, { true }, ItemProcessingMode.WITH_PRIVATE_IMPORTS) { v ->
             val el = v.element
             if (el is RsPatBinding) processor(el)
             false
@@ -1136,6 +1139,7 @@ private fun processLexicalDeclarations(
     scope: RsElement,
     cameFrom: PsiElement,
     ns: Set<Namespace>,
+    hygieneFilter: (RsPatBinding) -> Boolean,
     ipm: ItemProcessingMode,
     processor: RsResolveProcessor
 ): Boolean {
@@ -1143,7 +1147,7 @@ private fun processLexicalDeclarations(
 
     fun processPattern(pattern: RsPat, processor: RsResolveProcessor): Boolean {
         val boundNames = PsiTreeUtil.findChildrenOfType(pattern, RsPatBinding::class.java)
-            .filter { it.reference.resolve() == null }
+            .filter { it.reference.resolve() == null && hygieneFilter(it) }
         return processAll(boundNames, processor)
     }
 
@@ -1227,20 +1231,6 @@ private fun processLexicalDeclarations(
                     }
                 }
 
-                fun processExpandedStmts(stmts: List<RsExpandedElement>, processor: (RsExpandedElement) -> Boolean): Boolean {
-                    for (stmt in stmts) {
-                        val result = when (stmt) {
-                            is RsMacroStmt -> when (val expansion = stmt.macroCall.expansion) {
-                                is MacroExpansion.Stmts -> processExpandedStmts(expansion.elements, processor)
-                                else -> false
-                            }
-                            else -> processor(stmt)
-                        }
-                        if (result) return true
-                    }
-                    return false
-                }
-
                 val stmts = mutableListOf<RsLetDecl>()
                 processExpandedStmts(scope.stmtList) { stmt ->
                     if (cameFrom == stmt) {
@@ -1253,8 +1243,8 @@ private fun processLexicalDeclarations(
 
                 for (stmt in stmts.asReversed()) {
                     val pat = stmt.pat ?: continue
-                    if (PsiUtilCore.compareElementsByPosition(cameFrom, stmt) < 0) continue
-                    if (stmt == cameFrom) continue
+//                    if (PsiUtilCore.compareElementsByPosition(cameFrom, stmt) < 0) continue
+//                    if (stmt == cameFrom) continue
                     if (processPattern(pat, shadowingProcessor)) return true
                 }
             }
@@ -1302,6 +1292,17 @@ fun processNestedScopesUpwards(
     isCompletion: Boolean,
     processor: RsResolveProcessor
 ): Boolean {
+    val hygieneFilter: (RsPatBinding) -> Boolean = if (scopeStart is RsPath && ns == VALUES) {
+        val referenceNameElement = scopeStart.referenceNameElement
+        val isExpansion = (referenceNameElement.findElementExpandedFromUnchecked() ?: referenceNameElement).containingFile
+        fun (element: RsPatBinding): Boolean {
+            val nameIdentifier =  element.nameIdentifier ?: return false
+            val isExpansion2 = (nameIdentifier.findElementExpandedFromUnchecked() ?: nameIdentifier).containingFile
+            return isExpansion == isExpansion2
+        }
+    } else {
+        { true }
+    }
     val prevScope = mutableSetOf<String>()
     val stop = walkUp(scopeStart, { it is RsMod }) { cameFrom, scope ->
         processWithShadowing(prevScope, processor) { shadowingProcessor ->
@@ -1310,7 +1311,7 @@ fun processNestedScopesUpwards(
                 isCompletion -> ItemProcessingMode.WITH_PRIVATE_IMPORTS_N_EXTERN_CRATES_COMPLETION
                 else -> ItemProcessingMode.WITH_PRIVATE_IMPORTS_N_EXTERN_CRATES
             }
-            processLexicalDeclarations(scope, cameFrom, ns, ipm, shadowingProcessor)
+            processLexicalDeclarations(scope, cameFrom, ns, hygieneFilter, ipm, shadowingProcessor)
         }
     }
     if (stop) return true
@@ -1425,3 +1426,27 @@ object NameResolutionTestmarks {
 }
 
 private data class ImplicitStdlibCrate(val name: String, val crateRoot: RsFile)
+
+val RsBlock.expandedStmts: List<RsExpandedElement>
+    get() {
+        val stmts = mutableListOf<RsExpandedElement>()
+        processExpandedStmts(stmtList) { stmt ->
+            stmts.add(stmt)
+            false
+        }
+        return stmts
+    }
+
+fun processExpandedStmts(stmts: List<RsExpandedElement>, processor: (RsExpandedElement) -> Boolean): Boolean {
+    for (stmt in stmts) {
+        val result = when (stmt) {
+            is RsMacroStmt -> when (val expansion = stmt.macroCall.expansion) {
+                is MacroExpansion.Stmts -> processExpandedStmts(expansion.elements, processor)
+                else -> processor(stmt)
+            }
+            else -> processor(stmt)
+        }
+        if (result) return true
+    }
+    return false
+}

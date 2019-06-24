@@ -8,6 +8,7 @@ package org.rust.lang.core.psi.ext
 import com.intellij.codeInsight.completion.CompletionUtil
 import com.intellij.lang.ASTNode
 import com.intellij.openapi.util.SimpleModificationTracker
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.stubs.IStubElementType
 import com.intellij.psi.util.CachedValueProvider
@@ -47,11 +48,17 @@ val RsMacroCall.macroBody: String?
         val stub = greenStub
         if (stub != null) return stub.macroBody
         return macroArgument?.compactTT?.text
-            ?: formatMacroArgument?.braceListBodyText()?.toString()
-            ?: logMacroArgument?.braceListBodyText()?.toString()
-            ?: assertMacroArgument?.braceListBodyText()?.toString()
-            ?: exprMacroArgument?.braceListBodyText()?.toString()
-            ?: vecMacroArgument?.braceListBodyText()?.toString()
+            ?: bodyTextRange?.subSequence(containingFile.text)?.toString()
+    }
+
+val RsMacroCall.bodyTextRange: TextRange?
+    get() {
+        return macroArgument?.compactTT?.textRange
+            ?: formatMacroArgument?.braceListBodyText()
+            ?: logMacroArgument?.braceListBodyText()
+            ?: assertMacroArgument?.braceListBodyText()
+            ?: exprMacroArgument?.braceListBodyText()
+            ?: vecMacroArgument?.braceListBodyText()
     }
 
 val RsMacroCall.includingFilePath: String?
@@ -119,12 +126,12 @@ private fun RsExpandedElement.processRecursively(processor: (RsExpandedElement) 
     }
 }
 
-private fun PsiElement.braceListBodyText(): CharSequence? =
+private fun PsiElement.braceListBodyText(): TextRange? =
     textBetweenParens(firstChild, lastChild)
 
-private fun PsiElement.textBetweenParens(bra: PsiElement?, ket: PsiElement?): CharSequence? {
+private fun PsiElement.textBetweenParens(bra: PsiElement?, ket: PsiElement?): TextRange? {
     if (bra == null || ket == null || bra == ket) return null
-    return containingFile.text.subSequence(
+    return TextRange(
         bra.endOffset,
         ket.startOffset
     )

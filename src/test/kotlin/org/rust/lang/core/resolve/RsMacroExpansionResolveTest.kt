@@ -478,12 +478,41 @@ class RsMacroExpansionResolveTest : RsResolveTestBase() {
             ($($ t:tt)*) => { $($ t)* };
         }
         fn main() {
-            let a = 0;
+            bar! {
+                foo!();
+                let _ = a;
+            }         //^ unresolved
+        }
+    """)
+
+    fun `test hygiene 4`() = checkByCode("""
+        macro_rules! foo {
+            () => ( let a = 0; )
+        }
+        macro_rules! bar {
+            ($($ t:tt)*) => { $($ t)* };
+        }
+        fn main() {
+            let a = 1;
               //X
             bar! {
                 foo!();
                 let _ = a;
             }         //^
+        }
+    """)
+
+    fun `test hygiene 5`() = checkByCode("""
+        macro_rules! bar {
+            ($($ t:tt)*) => { $($ t)* };
+        }
+        fn main() {
+            let a = 1;
+              //X
+            bar! {
+                let _ = a;
+            }         //^
+            let a = 2;
         }
     """)
 }

@@ -10,6 +10,7 @@ import com.intellij.psi.PsiElement
 import org.rust.lang.core.psi.RsFile
 import org.rust.lang.core.psi.RsMacroArgument
 import org.rust.lang.core.psi.RsMacroCall
+import org.rust.lang.core.psi.RsMacroStmt
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.stubs.index.RsIncludeMacroIndex
 
@@ -24,7 +25,12 @@ interface RsExpandedElement : RsElement {
 
     companion object {
         fun getContextImpl(psi: RsExpandedElement): PsiElement? {
-            psi.expandedFrom?.let { return it.context }
+            psi.expandedFrom?.let {
+                return when (val itContext = it.context) {
+                    is RsMacroStmt -> itContext.context
+                    else -> itContext
+                }
+            }
             psi.getUserData(RS_EXPANSION_CONTEXT)?.let { return it }
             val parent = psi.stubParent
             if (parent is RsFile) {
@@ -131,14 +137,14 @@ private fun mapOffsetFromCallBodyToExpansion(
 }
 
 private fun Int.toBodyRelativeOffset(call: RsMacroCall): Int? {
-    val macroOffset = call.macroArgument?.compactTT?.startOffset ?: return null
+    val macroOffset = call.bodyTextRange?.startOffset?.let { it + 1 } ?: return null
     val elementOffset = this - macroOffset
     check(elementOffset >= 0)
     return elementOffset
 }
 
 private fun Int.fromBodyRelativeOffset(call: RsMacroCall): Int? {
-    val macroRange = call.macroArgument?.compactTT?.textRange ?: return null
+    val macroRange = call.bodyTextRange ?: return null
     val elementOffset = this + macroRange.startOffset
     check(elementOffset <= macroRange.endOffset)
     return elementOffset
