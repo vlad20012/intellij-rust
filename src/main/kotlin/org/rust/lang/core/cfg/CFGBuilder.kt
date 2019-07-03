@@ -14,6 +14,7 @@ import org.rust.lang.core.types.ty.TyNever
 import org.rust.lang.core.types.ty.TyPrimitive
 import org.rust.lang.core.types.type
 import org.rust.lang.utils.Graph
+import org.rust.stdext.Stack
 import java.util.*
 
 class CFGBuilder(val graph: Graph<CFGNodeData, CFGEdgeData>, val entry: CFGNode, val exit: CFGNode) : RsVisitor() {
@@ -27,9 +28,9 @@ class CFGBuilder(val graph: Graph<CFGNodeData, CFGEdgeData>, val entry: CFGNode,
 
 
     private var result: CFGNode? = null
-    private val preds: Deque<CFGNode> = ArrayDeque<CFGNode>()
+    private val preds: Stack<CFGNode> = Stack<CFGNode>()
     private val pred: CFGNode get() = preds.peek()
-    private val loopScopes: Deque<LoopScope> = ArrayDeque<LoopScope>()
+    private val loopScopes: Stack<LoopScope> = Stack<LoopScope>()
     private val breakableBlockScopes: Deque<BlockScope> = ArrayDeque<BlockScope>()
 
     private inline fun finishWith(callable: () -> CFGNode) {
