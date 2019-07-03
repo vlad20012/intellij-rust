@@ -35,6 +35,7 @@ import org.rust.stdext.supplyAsync
 import java.nio.file.Path
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
@@ -101,6 +102,15 @@ abstract class MacroExpansionTaskBase(
             RsResolveCache.getInstance(project).endExpandingMacros()
             heavyProcessToken?.finish()
         }
+
+        println("""
+            Index: ${timeIndex.get() / 1000_000}
+            Rest: ${(timeExtract.get() + timeExpand.get() + timeWrite.get() + timeSave.get()) / 1000_000}
+            Extract: ${timeExtract.get() / 1000_000}
+            Expand: ${timeExpand.get() / 1000_000}
+            Write: ${timeWrite.get() / 1000_000}
+            Save: ${timeSave.get() / 1000_000}
+        """.trimIndent())
     }
 
     private fun calcProgress(step: Int, progress: Double): Double =
@@ -115,11 +125,19 @@ abstract class MacroExpansionTaskBase(
         else -> 0.4 / (DEFAULT_RECURSION_LIMIT - 3)
     }
 
+    private val timeIndex = AtomicLong(0)
+    private val timeExtract = AtomicLong(0)
+    private val timeExpand = AtomicLong(0)
+    private val timeWrite = AtomicLong(0)
+    private val timeSave = AtomicLong(0)
+
     private fun submitExpansionTask() {
         checkIsBackgroundThread()
         realTaskIndicator.text2 = "Waiting for index"
+        val start1 = System.nanoTime()
         val extractableList = executeUnderProgress(subTaskIndicator) {
             runReadActionInSmartMode(project) {
+                timeIndex.addAndGet(System.nanoTime() - start1)
                 var extractableList: List<Extractable>?
                 do {
                     extractableList = expansionSteps.nextOrNull()
@@ -142,6 +160,7 @@ abstract class MacroExpansionTaskBase(
         supplyAsync(pool) {
             realTaskIndicator.text2 = "Expanding macros"
 
+            val start2 = System.nanoTime()
             val stages1 = extractableList.parallelStream().unordered().flatMap { extractable ->
                 executeUnderProgress(subTaskIndicator) {
                     // We need smart mode because rebind can be performed
@@ -152,7 +171,9 @@ abstract class MacroExpansionTaskBase(
                     }
                 }
             }.toList()
+            timeExtract.addAndGet(System.nanoTime() - start2)
 
+            val start3 = System.nanoTime()
             val stages2 = stages1.parallelStream().unordered().map { stage1 ->
                 val result = executeUnderProgressWithWriteActionPriorityWithRetries(subTaskIndicator) {
                     // We need smart mode to resolve macros
@@ -168,6 +189,7 @@ abstract class MacroExpansionTaskBase(
                 }
                 result
             }.filter { it !is EmptyPipeline }.toList()
+            timeExpand.addAndGet(System.nanoTime() - start3)
 
             realTaskIndicator.text2 = "Writing expansion results"
 
@@ -177,6 +199,8 @@ abstract class MacroExpansionTaskBase(
                 //  the storage, so if we created some files, we must add them to the storage, or they will be leaked.
                 // We can cancel task if the project is disposed b/c after project reopen storage consistency will be
                 // re-checked
+
+                val start4 = System.nanoTime()
                 val stages3fs = stages2.chunked(VFS_BATCH_SIZE).map { stages2c ->
                     val fs = LocalFsMacroExpansionVfsBatch(realFsExpansionContentRoot)
                     val stages3 = stages2c.map { stage2 ->
@@ -187,7 +211,9 @@ abstract class MacroExpansionTaskBase(
                     }
                     stages3 to fs
                 }
+                timeWrite.addAndGet(System.nanoTime() - start4)
 
+                val start5 = System.nanoTime()
                 // Note that if project is disposed, this task will not be executed or may be executed partially
                 executeSequentially(transactionExecutor, stages3fs) { (stages3, fs) ->
                     runWriteAction {
@@ -199,7 +225,10 @@ abstract class MacroExpansionTaskBase(
                     }
                     totalExpanded.addAndGet(stages3.size)
                     Unit
-                }.thenApply { Unit }
+                }.thenApply {
+                    timeSave.addAndGet(System.nanoTime() - start5)
+                    Unit
+                }
             } else {
                 CompletableFuture.completedFuture(Unit)
             }
