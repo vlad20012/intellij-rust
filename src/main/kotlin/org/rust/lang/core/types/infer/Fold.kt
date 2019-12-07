@@ -154,6 +154,15 @@ fun <T> TypeFoldable<T>.visitInferTys(visitor: (TyInfer) -> Boolean): Boolean {
     })
 }
 
+fun <T> TypeFoldable<T>.visitTyTypeParameterWith(visitor: (TyTypeParameter) -> Boolean): Boolean =
+    visitWith(object : TypeVisitor {
+        override fun visitTy(ty: Ty): Boolean = when {
+            ty is TyTypeParameter -> visitor(ty)
+            ty.hasTyTypeParameters -> ty.superVisitWith(this)
+            else -> false
+        }
+    })
+
 private data class HasTypeFlagVisitor(val flag: TypeFlags) : TypeVisitor {
     override fun visitTy(ty: Ty): Boolean = BitUtil.isSet(ty.flags, flag)
     override fun visitRegion(region: Region): Boolean = BitUtil.isSet(region.flags, flag)

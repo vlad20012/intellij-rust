@@ -23,16 +23,9 @@ import org.rust.lang.core.resolve.AssocItemScopeEntryBase
 import org.rust.lang.core.resolve.ImplLookup
 import org.rust.lang.core.resolve.ScopeEntry
 import org.rust.lang.core.resolve.ref.FieldResolveVariant
-import org.rust.lang.core.types.Substitution
-import org.rust.lang.core.types.emptySubstitution
-import org.rust.lang.core.types.implLookup
-import org.rust.lang.core.types.infer.RsInferenceContext
-import org.rust.lang.core.types.infer.TypeFolder
-import org.rust.lang.core.types.ty.Ty
-import org.rust.lang.core.types.ty.TyNever
-import org.rust.lang.core.types.ty.TyTypeParameter
-import org.rust.lang.core.types.ty.TyUnknown
-import org.rust.lang.core.types.type
+import org.rust.lang.core.types.*
+import org.rust.lang.core.types.infer.*
+import org.rust.lang.core.types.ty.*
 
 const val KEYWORD_PRIORITY = 80.0
 const val PRIMITIVE_TYPE_PRIORITY = KEYWORD_PRIORITY
@@ -89,13 +82,47 @@ fun createLookupElement(
 
 private fun RsInferenceContext.getSubstitution(scopeEntry: ScopeEntry): Substitution =
     when (scopeEntry) {
-        is AssocItemScopeEntryBase<*> ->
-            instantiateMethodOwnerSubstitution(scopeEntry).mapTypeValues { (_, v) -> resolveTypeVarsIfPossible(v) }
+        is AssocItemScopeEntryBase<*> -> {
+            val ownerSubst = instantiateMethodOwnerSubstitution(scopeEntry).mapTypeValues { (_, v) -> resolveTypeVarsIfPossible(v) }
+//                + mapOf(TyTypeParameter.self() to scopeEntry.selfTy).toTypeSubst()
+            val element = scopeEntry.element
+            val s = if (element is RsFunction) {
+                val signature = element.type
+                val generics = element.generics
+                val occurences = generics.associateWith { 0 }.toMutableMap()
+                signature.computeOccurences(occurences)
+                val singleUsageGenerics = occurences.entries.mapNotNull { (ty, count) -> ty.takeIf { count == 1 } }
+                val occurencesInBounds = singleUsageGenerics.associateWith { 0 }.toMutableMap()
+                val bounds = element.bounds
+                bounds.forEach { it.computeOccurences(occurencesInBounds) }
+                val singleUsageGenerics2 = occurencesInBounds.entries.mapNotNull { (ty, count) -> ty.takeIf { count == 1 } }
+                singleUsageGenerics2.mapNotNull { generic ->
+                    bounds.find { it.selfTy == generic }?.let { generic to it }
+                }.associate { (generic, bound) -> generic to TyAnon(null, listOf(bound.trait)) }
+            } else {
+                emptyMap()
+            }.toTypeSubst()
+//            val s3 = s.substituteInValues(ownerSubst).mapTypeValues { (_, v) ->
+//                val (r, o) = normalizeAssociatedTypesIn(v)
+//                o.forEach(fulfill::registerPredicateObligation)
+//                r
+//            }
+//            fulfill.selectWherePossible()
+//            (s3 + ownerSubst).mapTypeValues { (_, v) -> resolveTypeVarsIfPossible(v) }
+            s.substituteInValues(ownerSubst) + ownerSubst
+        }
         is FieldResolveVariant ->
             scopeEntry.selfTy.typeParameterValues
         else ->
             emptySubstitution
     }
+
+private fun <T> TypeFoldable<T>.computeOccurences(occurences: MutableMap<TyTypeParameter, Int>) {
+    visitTyTypeParameterWith {
+        occurences.computeIfPresent(it) { _, old -> old + 1 }
+        false
+    }
+}
 
 private val RsElement.asTy: Ty?
     get() = when (this) {
