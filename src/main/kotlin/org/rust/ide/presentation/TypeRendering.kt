@@ -7,10 +7,7 @@ package org.rust.ide.presentation
 
 import org.jetbrains.annotations.TestOnly
 import org.rust.lang.core.psi.RsTraitItem
-import org.rust.lang.core.psi.ext.RsGenericDeclaration
-import org.rust.lang.core.psi.ext.RsNamedElement
-import org.rust.lang.core.psi.ext.lifetimeParameters
-import org.rust.lang.core.psi.ext.typeParameters
+import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.types.BoundElement
 import org.rust.lang.core.types.regions.ReEarlyBound
 import org.rust.lang.core.types.regions.ReStatic
@@ -166,6 +163,13 @@ private data class TypeRenderer(
         render: (Ty) -> String,
         includeAssoc: Boolean = true
     ): String {
+        if (includeAssoc && trait.element.queryAttributes.hasAttribute("rustc_paren_sugar")) {
+            val visibleTypes = formatBoundElementGenerics(trait, render)
+            val output = trait.element.associatedTypesTransitively.singleOrNull()?.let { trait.assoc[it] }
+            if (visibleTypes.size == 1 && output != null) {
+                return visibleTypes.single() + " -> " + render(output)
+            }
+        }
         val assoc = if (includeAssoc) {
             trait.element.associatedTypesTransitively.mapNotNull {
                 val name = it.name ?: return@mapNotNull null
