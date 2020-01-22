@@ -8,10 +8,7 @@ package org.rust.ide.hints
 import com.intellij.codeInsight.hint.DeclarationRangeHandler
 import com.intellij.openapi.util.TextRange
 import org.rust.lang.core.psi.*
-import org.rust.lang.core.psi.ext.endOffset
-import org.rust.lang.core.psi.ext.getPrevNonCommentSibling
-import org.rust.lang.core.psi.ext.startOffset
-import org.rust.lang.core.psi.ext.union
+import org.rust.lang.core.psi.ext.*
 
 class RsStructItemDeclarationRangeHandler : DeclarationRangeHandler<RsStructItem> {
     override fun getDeclarationRange(container: RsStructItem): TextRange {
@@ -56,7 +53,8 @@ class RsModItemDeclarationRangeHandler : DeclarationRangeHandler<RsModItem> {
 class RsFunctionDeclarationRangeHandler : DeclarationRangeHandler<RsFunction> {
     override fun getDeclarationRange(container: RsFunction): TextRange {
         val startOffset = container.fn.startOffset
-        val endOffset = (container.block?.getPrevNonCommentSibling() ?: container).endOffset
+        val endOffset = (container.
+            block?.getPrevNonCommentSibling() ?: container).endOffset
         return TextRange(startOffset, endOffset)
     }
 }

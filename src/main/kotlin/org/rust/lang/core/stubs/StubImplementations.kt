@@ -8,6 +8,7 @@ package org.rust.lang.core.stubs
 import com.intellij.lang.*
 import com.intellij.lang.parser.GeneratedParserUtilBase
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiFile
 import com.intellij.psi.StubBuilder
 import com.intellij.psi.impl.source.tree.LazyParseableElement
@@ -43,15 +44,19 @@ class RsFileStub : PsiFileStubImpl<RsFile> {
 
     object Type : IStubFileElementType<RsFileStub>(RsLanguage) {
         // Bump this number if Stub structure changes
-        override fun getStubVersion(): Int = 190
+        override fun getStubVersion(): Int = 191
 
         override fun getBuilder(): StubBuilder = object : DefaultStubBuilder() {
             override fun createStubForFile(file: PsiFile): StubElement<*> = RsFileStub(file as RsFile)
-            override fun skipChildProcessingWhenBuildingStubs(parent: ASTNode, node: ASTNode): Boolean {
-                val elementType = node.elementType
-                return elementType == RsElementTypes.MACRO_ARGUMENT || elementType == RsElementTypes.MACRO_BODY
+            override fun skipChildProcessingWhenBuildingStubs(parent: ASTNode, child: ASTNode): Boolean {
+                val elementType = child.elementType
+                return elementType == MACRO_ARGUMENT || elementType == MACRO_BODY ||
+                    elementType == BLOCK && parent.elementType == FUNCTION && skipChildForFunctionBody(child)
             }
         }
+
+        private fun skipChildForFunctionBody(child: ASTNode): Boolean =
+            !BlockHasItemsOrAttrs.getOrCached(child)
 
         override fun serialize(stub: RsFileStub, dataStream: StubOutputStream) {
             dataStream.writeEnum(stub.attributes)
@@ -82,6 +87,51 @@ class RsFileStub : PsiFileStubImpl<RsFile> {
     }
 }
 
+private object BlockHasItemsOrAttrs {
+    private val RS_HAS_ITEMS_OR_ATTRS: Key<Boolean> = Key.create("RS_HAS_ITEMS_OR_ATTRS")
+    // TODO remove `USE`
+    private val ITEM_DEF_KWS = tokenSetOf(STATIC, ENUM, IMPL, MACRO_KW, MOD, STRUCT, UNION, TRAIT, TYPE_KW, USE)
+
+    /**
+     * The value will be cached forever, but it is not an issue because ...
+     */
+    fun getOrCached(node: ASTNode): Boolean {
+        assertIsBlock(node)
+        val cached = node.getUserData(BlockHasItemsOrAttrs.RS_HAS_ITEMS_OR_ATTRS)
+        return if (cached != null) {
+            cached
+        } else {
+            val computed = computeInner(node)
+            node.putUserData(BlockHasItemsOrAttrs.RS_HAS_ITEMS_OR_ATTRS, computed)
+            computed
+        }
+    }
+
+    private fun assertIsBlock(node: ASTNode) {
+        check(node.elementType == BLOCK) { "Expected block, found: ${node.elementType}, text: `${node.text}`" }
+    }
+
+    private fun computeInner(node: ASTNode): Boolean {
+        // Use PsiBuilder insted of RsLexer b/c PsiBuilder reuses cached tokens
+        val b = PsiBuilderFactory.getInstance().createBuilder(node.psi.project, node, null, RsLanguage, node.chars)
+        var prevToken: IElementType? = null
+        while (true) {
+            val token = b.tokenType ?: break
+            if (token in BlockHasItemsOrAttrs.ITEM_DEF_KWS ||
+                token == CONST && prevToken != MUL ||     // `const` but not `*const`
+                token == EXCL && prevToken == SHA ||      // `#!`
+                token == IDENTIFIER && prevToken == FN || // `fn foo` (but not `fn()`)
+                token == IDENTIFIER && b.tokenText == "union" && b.lookAhead(1) == IDENTIFIER) {
+
+                return true
+            }
+            b.advanceLexer()
+            prevToken = token
+        }
+
+        return false
+    }
+}
 
 fun factory(name: String): RsStubElementType<*, *> = when (name) {
     "EXTERN_CRATE_ITEM" -> RsExternCrateItemStub.Type
@@ -574,11 +624,16 @@ class RsFunctionStub(
             RsFunctionImpl(stub, this)
 
         override fun createStub(psi: RsFunction, parentStub: StubElement<*>?): RsFunctionStub {
+
+            val block = psi.block
+            val useInnerAttrs = block != null && BlockHasItemsOrAttrs.getOrCached(block.node)
+            val attrs = if (useInnerAttrs) psi.queryAttributes else QueryAttributes(psi, psi.outerAttrList.asSequence())
+
             var flags = 0
-            flags = BitUtil.set(flags, ABSTRACT_MASK, psi.isAbstract)
-            flags = BitUtil.set(flags, TEST_MASK, psi.isTest)
-            flags = BitUtil.set(flags, BENCH_MASK, psi.isBench)
-            flags = BitUtil.set(flags, CFG_MASK, psi.queryAttributes.hasCfgAttr())
+            flags = BitUtil.set(flags, ABSTRACT_MASK, block == null)
+            flags = BitUtil.set(flags, TEST_MASK, attrs.isTest)
+            flags = BitUtil.set(flags, BENCH_MASK, attrs.isBench)
+            flags = BitUtil.set(flags, CFG_MASK, attrs.hasCfgAttr())
             flags = BitUtil.set(flags, CONST_MASK, psi.isConst)
             flags = BitUtil.set(flags, UNSAFE_MASK, psi.isUnsafe)
             flags = BitUtil.set(flags, EXTERN_MASK, psi.isExtern)
@@ -822,6 +877,8 @@ class RsValueParameterStub(
 ) : StubBase<RsValueParameter>(parent, elementType) {
 
     object Type : RsStubElementType<RsValueParameterStub, RsValueParameter>("VALUE_PARAMETER") {
+        override fun shouldCreateStub(node: ASTNode): Boolean = createStubIfParentIsStub(node)
+
         override fun deserialize(dataStream: StubInputStream, parentStub: StubElement<*>?) =
             RsValueParameterStub(parentStub, this,
                 dataStream.readNameAsString()
@@ -988,6 +1045,8 @@ class RsLifetimeStub(
     RsNamedStub {
 
     object Type : RsStubElementType<RsLifetimeStub, RsLifetime>("LIFETIME") {
+        override fun shouldCreateStub(node: ASTNode): Boolean = createStubIfParentIsStub(node)
+
         override fun createPsi(stub: RsLifetimeStub) =
             RsLifetimeImpl(stub, this)
 
@@ -1135,6 +1194,8 @@ class RsInnerAttrStub(
 ) : StubBase<RsInnerAttr>(parent, elementType) {
 
     object Type : RsStubElementType<RsInnerAttrStub, RsInnerAttr>("INNER_ATTR") {
+        override fun shouldCreateStub(node: ASTNode): Boolean = createStubIfParentIsStub(node)
+
         override fun createPsi(stub: RsInnerAttrStub): RsInnerAttr = RsInnerAttrImpl(stub, this)
 
         override fun serialize(stub: RsInnerAttrStub, dataStream: StubOutputStream) {}
@@ -1157,6 +1218,8 @@ class RsMetaItemStub(
     val hasEq: Boolean
 ) : StubBase<RsMetaItem>(parent, elementType) {
     object Type : RsStubElementType<RsMetaItemStub, RsMetaItem>("META_ITEM") {
+        override fun shouldCreateStub(node: ASTNode): Boolean = createStubIfParentIsStub(node)
+
         override fun createStub(psi: RsMetaItem, parentStub: StubElement<*>?): RsMetaItemStub =
             RsMetaItemStub(parentStub, this, psi.name, psi.eq != null)
 
@@ -1211,8 +1274,12 @@ object RsBlockStubType : RsPlaceholderStub.Type<RsBlock>("BLOCK", ::RsBlockImpl)
                          IReparseableElementTypeBase,
                          ILightLazyParseableElementType {
 
-    override fun shouldCreateStub(node: ASTNode): Boolean =
-        createStubIfParentIsStub(node) || node.findChildByType(RS_ITEMS) != null
+    /** Note: must return false if [StubBuilder.skipChildProcessingWhenBuildingStubs] returns true for the [node] */
+    override fun shouldCreateStub(node: ASTNode): Boolean {
+        val shouldCreateStub = (createStubIfParentIsStub(node) || node.findChildByType(RS_ITEMS) != null)
+            && (node.treeParent.elementType != FUNCTION || BlockHasItemsOrAttrs.getOrCached(node))
+        return shouldCreateStub
+    }
 
     // Lazy parsed (function body)
     override fun parse(text: CharSequence, table: CharTable): ASTNode = LazyParseableElement(this, text)
@@ -1396,6 +1463,8 @@ class RsPolyboundStub(
 ) : StubBase<RsPolybound>(parent, elementType) {
 
     object Type : RsStubElementType<RsPolyboundStub, RsPolybound>("POLYBOUND") {
+        override fun shouldCreateStub(node: ASTNode): Boolean = createStubIfParentIsStub(node)
+
         override fun deserialize(dataStream: StubInputStream, parentStub: StubElement<*>?) =
             RsPolyboundStub(parentStub, this,
                 dataStream.readBoolean()
