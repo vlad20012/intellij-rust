@@ -267,6 +267,75 @@ object RustParserUtil : GeneratedParserUtilBase() {
         }
 
     @JvmStatic
+    fun parseItem(b: PsiBuilder, level: Int): Boolean {
+        val pos = enter_section_(b, level, 0, "<item>") // Better syntax errors
+        val nextLevel = level + 1
+        val (token, text, nextToken, nextToken2) = b.probe {
+            while (b.tokenType == SHA) {
+                if (!RustParser.OuterAttr(b, nextLevel)) break
+            }
+            RustParser.Vis(b, nextLevel)
+            defaultKeyword(b, nextLevel)
+            val tokenType = b.tokenType
+            val tokenText = b.tokenText
+            b.advanceLexer()
+            val nextToken = b.tokenType
+            val nextToken2 = b.lookAhead(1)
+            listOf(tokenType, tokenText, nextToken, nextToken2)
+        }
+
+        val result = when (token) {
+            STATIC -> RustParser.Constant(b, nextLevel)
+            CONST -> when (nextToken) {
+                IDENTIFIER, UNDERSCORE -> RustParser.Constant(b, level)
+                else -> RustParser.Function(b, level)
+            }
+            TYPE_KW -> RustParser.TypeAlias(b, nextLevel)
+            FN -> RustParser.Function(b, nextLevel)
+            UNSAFE -> when (nextToken) {
+                TRAIT, IDENTIFIER /*auto*/, AUTO -> RustParser.TraitItem(b, level)
+                IMPL -> RustParser.ImplItem(b, level)
+                else -> RustParser.Function(b, level)
+            }
+            TRAIT -> RustParser.TraitAlias(b, level) || RustParser.TraitItem(b, level)
+            IMPL -> RustParser.ImplItem(b, nextLevel)
+            MOD -> when (nextToken2) {
+                LBRACE -> RustParser.ModItem(b, level)
+                SEMICOLON -> RustParser.ModDeclItem(b, level)
+                else -> RustParser.ModItem(b, level) || RustParser.ModDeclItem(b, level)
+            }
+            EXTERN -> when (nextToken) {
+                LBRACE -> RustParser.ForeignModItem(b, level)
+                STRING_LITERAL -> when (nextToken2) {
+                    FN -> RustParser.Function(b, level)
+                    else -> RustParser.ForeignModItem(b, level)
+                }
+                CRATE -> RustParser.ExternCrateItem(b, level)
+                else -> RustParser.Function(b, level)
+            }
+            STRUCT -> RustParser.StructItem(b, nextLevel)
+            ENUM -> RustParser.EnumItem(b, nextLevel)
+            USE -> RustParser.UseItem(b, nextLevel)
+            MACRO_KW -> RustParser.Macro2(b, nextLevel)
+            else -> when {
+                token == IDENTIFIER && text == "async" || token == ASYNC -> RustParser.Function(b, nextLevel)
+                token == IDENTIFIER && text == "union" || token == UNION -> RustParser.StructItem(b, nextLevel)
+                token == IDENTIFIER && text == "auto" || token == AUTO -> RustParser.TraitItem(b, nextLevel)
+                token == IDENTIFIER && text == "macro_rules" -> RustParser.Macro(b, nextLevel)
+                else -> RustParser.ItemLikeMacroCall(b, nextLevel)
+            }
+        }
+        exit_section_(b, level, pos, result, false, null)
+
+        if (!result) {
+            // Error path. Invoke Grammar-Kit rule for better syntax errors
+            check(!RustParser.ItemRaw(b, level))
+        }
+
+        return result
+    }
+
+    @JvmStatic
     fun tupleOrParenType(b: PsiBuilder, level: Int, typeReference: Parser, tupeTypeUpper: Parser): Boolean {
         val tupleOrParens: PsiBuilder.Marker = enter_section_(b)
 
