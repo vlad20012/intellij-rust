@@ -402,7 +402,10 @@ private fun processQualifiedPathResolveVariants(
     if (processItemOrEnumVariantDeclarations(base, ns - MACROS, processor, withPrivateImports = isSuperChain)) {
         return true
     }
-    if (base is RsTypeDeclarationElement && parent !is RsUseSpeck) { // Foo::<Bar>::baz
+
+    if (base is RsTraitItem && parent !is RsUseSpeck) {
+        if (processTraitRelativePath(qualifier, BoundElement(base, subst), ns, processor)) return true
+    } else if (base is RsTypeDeclarationElement && parent !is RsUseSpeck) { // Foo::<Bar>::baz
         val baseTy = if (base is RsImplItem && qualifier.hasCself) {
             // impl S { fn foo() { Self::bar() } }
             base.typeReference?.type ?: TyUnknown
@@ -563,6 +566,34 @@ private fun processTypeQualifiedPathResolveVariants(
         emptySubstitution
     }
     if (processAssociatedItemsWithSelfSubst(lookup, baseTy, ns, selfSubst, shadowingProcessor)) return true
+    return false
+}
+
+/** `Self::foo` inside a trait or `TraitName::foo` */
+private fun processTraitRelativePath(
+    qualifier: RsPath,
+    baseBoundTrait: BoundElement<RsTraitItem>,
+    ns: Set<Namespace>,
+    processor: RsResolveProcessor
+): Boolean {
+    val isSelf = qualifier.hasCself
+    for (boundTrait in baseBoundTrait.flattenHierarchy) {
+        val trait = boundTrait.element
+        val (ty, source) = if (isSelf) {
+            TyTypeParameter.self() to TraitImplSource.TraitBound(trait)
+        } else {
+            TyUnknown to TraitImplSource.NoImpl(trait)
+        }
+        for (item in trait.members?.expandedMembers.orEmpty()) {
+            val itemNs = when (item) {
+                is RsTypeAlias -> Namespace.Types
+                else -> Namespace.Values // RsFunction, RsConstant
+            }
+            if (itemNs !in ns) continue
+            val name = item.name ?: continue
+            if (processor(AssocItemScopeEntry(name, item, boundTrait.subst, ty, source))) return true
+        }
+    }
     return false
 }
 
