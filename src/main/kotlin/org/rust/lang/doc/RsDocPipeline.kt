@@ -33,11 +33,15 @@ import org.rust.lang.core.types.ty.TyPrimitive
 import org.rust.lang.doc.psi.RsDocKind
 import java.net.URI
 
-fun RsDocAndAttributeOwner.documentation(): String? =
-    (outerDocs() + innerDocs())
+fun RsDocAndAttributeOwner.hasDocumentation(): Boolean = outerDocs().count() != 0 || innerDocs().count() != 0
+
+fun RsDocAndAttributeOwner.documentation(): String? {
+    if (greenStub?.hasDocs == false) return null
+    return (outerDocs() + innerDocs())
         .map { it.first to it.second.splitToSequence("\r\n", "\r", "\n") }
         .flatMap { it.first.removeDecoration(it.second) }
         .joinToString("\n")
+}
 
 fun RsDocAndAttributeOwner.documentationAsHtml(originalElement: RsElement = this): String? {
     // We need some host with unique scheme to

@@ -28,7 +28,7 @@ fun RsModDeclItem.getOrCreateModuleFile(): PsiFile? {
 }
 
 val RsModDeclItem.isLocal: Boolean
-    get() = greenStub?.isLocal ?: (ancestorStrict<RsBlock>() != null)
+    get() = ancestorStrict<RsBlock>() != null
 
 
 //TODO: use explicit path if present.
