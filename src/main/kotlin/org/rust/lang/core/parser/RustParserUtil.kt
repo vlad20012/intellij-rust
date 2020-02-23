@@ -54,7 +54,7 @@ object RustParserUtil : GeneratedParserUtilBase() {
         get() = getUserData(FLAGS) ?: DEFAULT_FLAGS
         set(value) = putUserData(FLAGS, value)
 
-    private fun PsiBuilder.withFlag(flag: Int, mode: BinaryMode, block: PsiBuilder.() -> Boolean): Boolean {
+    private inline fun PsiBuilder.withFlag(flag: Int, mode: BinaryMode, block: PsiBuilder.() -> Boolean): Boolean {
         val oldFlags = flags
         val newFlags = BitUtil.set(oldFlags, flag, mode == BinaryMode.ON)
         flags = newFlags
@@ -184,9 +184,9 @@ object RustParserUtil : GeneratedParserUtilBase() {
     }
 
     @JvmStatic
-    fun pathMode(b: PsiBuilder, level: Int, mode: PathParsingMode, parser: Parser): Boolean {
+    fun pathMode(b: PsiBuilder, level: Int, mode: PathParsingMode, typeQualsMode: BinaryMode, parser: Parser): Boolean {
         val oldFlags = b.flags
-        val newFlags = setPathMod(oldFlags, mode)
+        val newFlags = setPathMod(BitUtil.set(oldFlags, TYPE_QUAL_ALLOWED, typeQualsMode == BinaryMode.ON), mode)
         b.flags = newFlags
         check(getPathMod(b.flags) == mode)
         val result = parser.parse(b, level)
@@ -337,6 +337,8 @@ object RustParserUtil : GeneratedParserUtilBase() {
 
     @JvmStatic
     fun tupleOrParenType(b: PsiBuilder, level: Int, typeReference: Parser, tupeTypeUpper: Parser): Boolean {
+        if (b.tokenType != LPAREN || b.lookAhead(1) == RPAREN) return false
+
         val tupleOrParens: PsiBuilder.Marker = enter_section_(b)
 
         if (!consumeTokenSmart(b, LPAREN)) {

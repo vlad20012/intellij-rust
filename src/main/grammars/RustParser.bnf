@@ -76,6 +76,15 @@
         ASYNC     = 'async_kw'
         TRY       = 'try_kw'
 
+        GTGTEQ    = ">>="
+        GTGT      = ">>"
+        GTEQ      = ">="
+        LTLTEQ    = "<<="
+        LTLT      = "<<"
+        LTEQ      = "<="
+        OROR      = "||"
+        ANDAND    = "&&"
+
         SHEBANG_LINE = 'shebang_line'
         RESERVED_KEYWORD = 'reserved_keyword'
     ]
@@ -93,7 +102,8 @@
 
     generateTokenAccessors=true
 
-    consumeTokenMethod("(.*_recover)|(.*Expr)|BinAssignOp") = "consumeTokenFast"
+    consumeTokenMethod("((?!.*_with_recover).*_recover)|(.*_first)|(.*Expr)") = "consumeTokenFast"
+//    consumeTokenMethod(".*") = "consumeTokenFast"
 }
 
 // This is the grammar of the Rust language which is used by Grammar Kit
@@ -149,7 +159,7 @@ fake MetaItem ::= identifier [ '=' LitExpr | MetaItemArgs ] | CompactTT {
 //   ~~~~~~~~~~~~~
 // #![crate_type = "lib"]
 //    ~~~~~~~~~~~~~~~~~~
-MetaItemWithoutTT ::= identifier [ '=' LitExpr | MetaItemArgs ] { elementType = MetaItem }
+MetaItemWithoutTT ::= identifier [ '=' LitExprWithoutAttrs | MetaItemArgs ] { elementType = MetaItem }
 
 // #[some::path]
 //   ~~~~~~~~~~
@@ -161,7 +171,7 @@ MetaItemWithoutTT ::= identifier [ '=' LitExpr | MetaItemArgs ] { elementType = 
 //        ~~~~~~~~~~~~~~~~~~~~~~~
 MetaItemWithTT ::= CompactTT { elementType = MetaItem }
 
-MetaItemArgs ::= '(' ( [ <<comma_separated_list (LitExpr | MetaItemWithoutTT )>> ] ')' |  MetaItemWithTT ')' ) {
+MetaItemArgs ::= '(' ( [ <<comma_separated_list (LitExprWithoutAttrs | MetaItemWithoutTT )>> ] ')' |  MetaItemWithTT ')' ) {
   extends = "org.rust.lang.core.psi.ext.RsStubbedElementImpl<?>"
   stubClass = "org.rust.lang.core.stubs.RsPlaceholderStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
@@ -206,10 +216,10 @@ TypeArgumentList ::= TypeArgumentListImpl {
 }
 ColonTypeArgumentList ::= &'::' TypeArgumentListImpl { elementType = TypeArgumentList }
 
-private TypeArgumentListImpl ::= '::'? '<' !'=' ( <<list_element Lifetime>>*
-                                                  <<list_element (!(identifier ('='|':')) !'>' TypeReference)>>*
-                                                  <<list_element (!'>' (BlockExpr | LitExpr | &('-' LitExpr) UnaryExpr))>>*
-                                                  <<list_element AssocTypeBinding>>*) '>' { pin = 3 }
+private TypeArgumentListImpl ::= '::'? '<' !'=' <<list_element AnyTypeArgument>>* '>' { pin = 3 }
+private AnyTypeArgument ::= AssocTypeBinding | TypeReference | Lifetime | ConstArgument
+private ConstArgument ::= (BlockExpr | LitExpr | &('-' LitExpr) UnaryExpr)
+
 AssocTypeBinding ::= identifier (AssocTypeBindingType | AssocTypeBindingBound) {
   implements = [ "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsReferenceElement" ]
@@ -227,31 +237,31 @@ private AssocTypeBindingBound ::=  ':' TypeBounds { pin = 1 }
 //    a::b<T,U>::c<V,W>
 //    std::Fn(V) -> W
 //    std::Fn(V)
-TypePathGenericArgs ::= <<typeQuals 'ON' <<pathMode 'TYPE' PathImpl>>>> {
+TypePathGenericArgs ::= <<pathMode 'TYPE' 'ON' PathImpl>> {
   elementType = Path
   name = "path"
 }
 
-TypePathGenericArgsNoTypeQual ::= <<typeQuals 'OFF' <<pathMode 'TYPE' PathImpl>>>> {
+TypePathGenericArgsNoTypeQual ::= <<pathMode 'TYPE' 'OFF' PathImpl>> {
   elementType = Path
   name = "path"
 }
 
 // Paths without type arguments, for use declarations:
 //     a::b::c
-PathWithoutTypeArgs ::= <<typeQuals 'OFF' <<pathMode 'NO_TYPE_ARGS' PathImpl>>>> {
+PathWithoutTypeArgs ::= <<pathMode 'NO_TYPE_ARGS' 'OFF' PathImpl>> {
   elementType = Path
   name = "path"
 }
 
 // Paths for expressions:
 //     a::b::<T,U>::c
-ValuePathGenericArgs ::= <<typeQuals 'ON' <<pathMode 'VALUE' PathImpl>>>> {
+ValuePathGenericArgs ::= <<pathMode 'VALUE' 'ON' PathImpl>> {
   elementType = Path
   name = "path"
 }
 
-ValuePathGenericArgsNoTypeQual ::= <<typeQuals 'OFF' <<pathMode 'VALUE' PathImpl>>>> {
+ValuePathGenericArgsNoTypeQual ::= <<pathMode 'VALUE' 'OFF' PathImpl>> {
   elementType = Path
   name = "path"
 }
@@ -356,9 +366,9 @@ private FnParameter_with_recover ::= !')' FnParameter (',' | &')') {
 }
 private FnParameter_recover ::= !(Pat_first | OuterAttr_first | ')' | '...')
 
-LambdaParameter ::= OuterAttr* Pat TypeAscription?
-AnonParameter ::= OuterAttr* [ RestrictedPat ':' ] TypeReference
-PathParameter ::= OuterAttr* TypeReference !'='
+LambdaParameter ::= !'|' OuterAttr* Pat TypeAscription?
+AnonParameter ::= !')' OuterAttr* [ RestrictedPat ':' ] TypeReference
+PathParameter ::= !')' OuterAttr* TypeReference !'='
 
 SelfParameter ::= OuterAttr* [ '&' Lifetime? ] mut? self TypeAscription? {
   implements = [ "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
@@ -446,7 +456,7 @@ Polybound ::= '(' PolyboundInner ')' | PolyboundInner {
 
 private PolyboundInner ::= [ ForLifetimes | '?' ] Bound
 
-WhereClause ::= where <<comma_separated_list WherePred>>? {
+WhereClause ::= where WherePred_with_recover* {
   extends = "org.rust.lang.core.psi.ext.RsStubbedElementImpl<?>"
   stubClass = "org.rust.lang.core.stubs.RsPlaceholderStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
@@ -457,6 +467,13 @@ WherePred ::= Lifetime LifetimeParamBounds | ForLifetimes? TypeReference TypePar
   stubClass = "org.rust.lang.core.stubs.RsPlaceholderStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
+
+private WherePred_with_recover ::= !'{' WherePred (',' | &('{' | ';' | '=' | ',')) {
+  pin = 2
+  recoverWhile = WherePred_recover
+}
+
+private WherePred_recover ::= !('{' | ';' | '=' | ',' | TypeReference_first | Item_first)
 
 ForLifetimes ::= for '<' LifetimesParams '>' {
   extends = "org.rust.lang.core.psi.ext.RsStubbedElementImpl<?>"
@@ -503,10 +520,10 @@ Pat ::= PatWild
       | PatRef
       | PatTup
       | PatSlice
+      | PatIdent
       | PatMacro
       | PatStruct
       | PatTupleStruct
-      | PatIdent
       | (PatConst !('..' | '...' | '..='))
       | PatRange
       | PatBox {
@@ -514,7 +531,7 @@ Pat ::= PatWild
   name = "pattern"
 }
 
-private Pat_first ::= '_' | '..' | '&' | '(' | '[' | Path_first | LitExpr  | box | '-' | ref | mut
+private Pat_first ::= '_' | '..' | '&' | '(' | '[' | Path_first | AnyLiteralToken | box | '-' | ref | mut
 
 
 PatBox ::= box Pat
@@ -548,10 +565,14 @@ PatRef ::= '&' mut? Pat
 PatWild ::= '_'
 PatRest ::= '..'
 
-PatBinding ::= BindingMode? identifier !'...' !'::' !'..=' !'..' {
+PatBinding ::= BindingMode? identifier !ForbiddenPatBindingLast {
   implements = [ "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsReferenceElement" ]
   mixin = "org.rust.lang.core.psi.ext.RsPatBindingImplMixin"
+}
+
+private ForbiddenPatBindingLast ::= '...' | '::' | '..=' | '..' | '<' | '(' | '{' | '!' {
+  consumeTokenMethod = "consumeTokenFast"
 }
 
 PatFieldFull ::= (identifier | INTEGER_LITERAL ) ':' Pat {
@@ -752,7 +773,7 @@ NamedFieldDecl ::= AttrsAndVis identifier TypeAscription {
 }
 private Field_recover ::= !('}' | ',')
 
-TupleFieldDecl ::= OuterAttr* TupleFieldVis? TypeReference {
+TupleFieldDecl ::= !')' OuterAttr* TupleFieldVis? TypeReference {
   implements = [ "org.rust.lang.core.psi.ext.RsFieldDecl" ]
   mixin = "org.rust.lang.core.psi.ext.RsTupleFieldDeclImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsPlaceholderStub"
@@ -834,6 +855,16 @@ TraitAlias ::= AttrsAndVis trait identifier TypeParameterList? '=' TraitAliasBou
 
 private TypeAscription ::= ':' TypeReference
 
+private TypeReference_first ::= '['                     // ArrayType
+                              | '&' | '*'               // RefLikeType
+                              | unsafe | extern | fn    // FnPointerType
+                              | '('                     // tupleOrParenType
+                              | impl | "dyn"            // ExplicitTraitType
+                              | '_' | '!'               // TrivialBaseType
+                              | for                     // ForInType, ImplicitTraitType
+                              | '?' | QUOTE_IDENTIFIER  // ImplicitTraitType
+                              | Path_first              // BaseType, MacroType
+
 private TypeReferenceInner ::= ArrayType
                                | RefLikeType
                                | FnPointerType
@@ -852,8 +883,8 @@ private TypeReferenceNoImplicitTraitTypeInner ::= ArrayType
                                // External rule to find the difference between `(T)` and `(T,)`
                                | <<tupleOrParenType TypeReferenceInner TupleType_upper>>
                                | ExplicitTraitType
+                               | BaseType !'!'
                                | MacroType
-                               | BaseType
                                | ForInType // FIXME O(2^n) for types like `for<'a> A<for<'b> B<for<'c> C<...>>>`
 
 private ScalarTypeReferenceInner ::= ArrayType
@@ -1020,7 +1051,7 @@ Expr ::= RetExpr
 }
 
 private Expr_first ::= return | '|' | Path_first | '{' | '[' | '(' | '..' | '...' | '..=' | true | false | box | QUOTE_IDENTIFIER
-  | '-' | '*' | '!' | '&' | static | move | LitExpr | while | if | for | continue | break  | loop | match | unsafe
+  | '-' | '*' | '!' | '&' | static | move | AnyLiteralToken | while | if | for | continue | break  | loop | match | unsafe
   | yield | "async" | "try"
 
 // https://github.com/rust-lang/rfcs/blob/master/text/0092-struct-grammar.md
@@ -1067,12 +1098,12 @@ fake BinaryExpr ::= Expr BinaryOp Expr {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-fake BinaryOp ::= gtgteq | ltlteq | '|=' | '^=' | '&=' | '=' | '+=' | '-=' | '*=' | '/=' | '%='
+fake BinaryOp ::= '>>=' | '<<=' | '|=' | '^=' | '&=' | '=' | '+=' | '-=' | '*=' | '/=' | '%='
                 | '==' | '!='
-                | '<' | '>' | lteq | gteq
-                | ltlt | gtgt
+                | '<' | '>' | '<=' | '>='
+                | '<<' | '>>'
                 | '+' | '-' | '*' | '/' | '%'
-                | oror | andand | '|' | '&' | '^' {
+                | '||' | '&&' | '|' | '&' | '^' {
   implements = [ "org.rust.lang.core.psi.ext.RsReferenceElement" ]
   mixin = "org.rust.lang.core.psi.ext.RsBinaryOpImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsBinaryOpStub"
@@ -1089,7 +1120,7 @@ AddBinExpr       ::= Expr !<<isCompleteBlockExpr>> AddBinOp StmtModeExprOff
 MulBinExpr       ::= Expr !<<isCompleteBlockExpr>> MulBinOp StmtModeExprOff
 
 CompBinOp        ::= '==' | '!=' { name = "operator" }
-RelCompBinOp     ::= (!('<<' | '<=') '<' | !('>>' | '>=')  '>' | lteq | gteq) { name = "operator" }
+RelCompBinOp     ::= lteq | gteq | !ltlt '<' | !gtgt '>' { name = "operator" }
 BitShiftBinOp    ::= ltlt | gtgt { name = "operator" }
 AddBinOp         ::= '+' | '-' { name = "operator" }
 MulBinOp         ::= '*' | '/' | '%' { name = "operator" }
@@ -1290,18 +1321,20 @@ MethodCall ::= identifier ColonTypeArgumentList? ValueArgumentList {
   mixin = "org.rust.lang.core.psi.ext.RsMethodCallImplMixin"
 }
 
-LitExpr ::= OuterAttr*
-  (STRING_LITERAL | BYTE_STRING_LITERAL
-  | RAW_STRING_LITERAL | RAW_BYTE_STRING_LITERAL
-  | CHAR_LITERAL | BYTE_LITERAL
-  | INTEGER_LITERAL | FLOAT_LITERAL
-  | BOOL_LITERAL) {
+LitExpr ::= OuterAttr* AnyLiteralToken {
  elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
  implements = [ "com.intellij.psi.PsiLanguageInjectionHost"
                 "com.intellij.psi.ContributedReferenceHost"
                 "org.rust.lang.core.psi.ext.RsOuterAttributeOwner" ]
  mixin = "org.rust.lang.core.psi.ext.RsLitExprMixin"
 }
+LitExprWithoutAttrs ::= AnyLiteralToken { elementType = LitExpr }
+
+private AnyLiteralToken ::= STRING_LITERAL | BYTE_STRING_LITERAL
+  | RAW_STRING_LITERAL | RAW_BYTE_STRING_LITERAL
+  | CHAR_LITERAL | BYTE_LITERAL
+  | INTEGER_LITERAL | FLOAT_LITERAL
+  | BOOL_LITERAL { consumeTokenMethod = "consumeTokenFast" }
 
 YieldExpr ::= OuterAttr* yield Expr? {
   implements = [ "org.rust.lang.core.psi.ext.RsOuterAttributeOwner" ]
@@ -1535,17 +1568,17 @@ EmptyStmt ::= ';' { extends = Stmt }
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Keep in sync with `collapsedTokenType`
-private gtgteq ::= <<gtgteqImpl>>  | never GTGTEQ { name = ">>=" }
-private gtgt   ::= <<gtgtImpl>>    | never GTGT   { name = ">>" }
-private gteq   ::= <<gteqImpl>>    | never GTEQ   { name = ">=" }
-private ltlteq ::= <<ltlteqImpl>>  | never LTLTEQ { name = "<<=" }
-private ltlt   ::= <<ltltImpl>>    | never LTLT   { name = "<<" }
-private lteq   ::= <<lteqImpl>>    | never LTEQ   { name = "<=" }
-private oror   ::= <<ororImpl>>    | never OROR   { name = "||" }
-private andand ::= <<andandImpl>>  | never ANDAND { name = "&&" }
+private gtgteq ::= <<gtgteqImpl>>
+private gtgt   ::= <<gtgtImpl>>
+private gteq   ::= <<gteqImpl>>
+private ltlteq ::= <<ltlteqImpl>>
+private ltlt   ::= <<ltltImpl>>
+private lteq   ::= <<lteqImpl>>
+private oror   ::= <<ororImpl>>
+private andand ::= <<andandImpl>>
 
-private never ::= !()
+private never ::= !() // TODO external
 
 // Trailing commas are allowed
 private meta comma_separated_list ::= <<param>> ( ',' <<param>> )* ','?
-private meta list_element ::= <<param>> !'+' (',' | &'>') { pin = 2 }
+private meta list_element ::= !'>' <<param>> (',' | &'>') { pin = 2 }
