@@ -297,23 +297,25 @@ private AttrsAndVis ::= OuterAttr* Vis?
 
 // Note: don't forget to add new item element types to [org.rust.lang.core.psi.RS_ITEMS], and to
 // `itemKindName` & `itemDefKeyword` in `RsItemElement.kt`
-private Item ::= Constant
-               | TypeAlias
-               | Function
-               | TraitAlias
-               | TraitItem
-               | ImplItem
-               | ModItem
-               | ModDeclItem
-               | ForeignModItem
-               | StructItem
-               | EnumItem
-               | UseItem
-               | ExternCrateItem
-               | Macro
-               | Macro2
-               | ItemLikeMacroCall {
+//noinspection BnfUnusedRule
+Item ::= AttrsAndVis default_? (Constant
+                  | TypeAlias
+                  | Function
+                  | TraitAlias
+                  | TraitItem
+                  | ImplItem
+                  | ModItem
+                  | ModDeclItem
+                  | ForeignModItem
+                  | StructItem
+                  | EnumItem
+                  | UseItem
+                  | ExternCrateItem
+                  | Macro
+                  | Macro2
+                  | ItemLikeMacroCall) {
   name = "item"
+  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
 }
 
 private Item_with_recover ::= !('}' | <<eof>>) Item {
@@ -473,17 +475,16 @@ RetType ::= '->' TypeReferenceNoImplicitTraitType {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-Function ::= AttrsAndVis
-             default_?
-             async? const? unsafe? ExternAbi?
-             fn identifier
-             TypeParameterList?
-             FnParameters
-             RetType?
-             WhereClause?
-             (';' | ShallowBlock)
+upper Function ::= async? const? unsafe? ExternAbi?
+                   fn identifier
+                   TypeParameterList?
+                   FnParameters
+                   RetType?
+                   WhereClause?
+                   (';' | ShallowBlock)
 {
   pin = 'identifier'
+  name = ""
   implements = [ "org.rust.lang.core.psi.ext.RsQualifiedNamedElement"
                  "org.rust.lang.core.psi.ext.RsGenericDeclaration"
                  "org.rust.lang.core.psi.ext.RsInnerAttributeOwner"
@@ -495,7 +496,6 @@ Function ::= AttrsAndVis
   mixin = "org.rust.lang.core.psi.ext.RsFunctionImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsFunctionStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
 }
 
 Pat ::= PatWild
@@ -565,8 +565,9 @@ BindingMode ::= ref mut? | mut
 
 OrPats ::= '|'? Pat ('|' Pat)*
 
-Constant ::= AttrsAndVis default_? (static mut? | const) (identifier | '_') TypeAscription [ '=' AnyExpr ] ';' {
-  pin = 4
+upper Constant ::= (static mut? | const) (identifier | '_') TypeAscription [ '=' AnyExpr ] ';' {
+  pin = 2
+  name = ""
   implements = [ "org.rust.lang.core.psi.ext.RsQualifiedNamedElement"
                  "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsItemElement"
@@ -575,13 +576,11 @@ Constant ::= AttrsAndVis default_? (static mut? | const) (identifier | '_') Type
                  "org.rust.lang.core.macros.RsExpandedElement" ]
   mixin = "org.rust.lang.core.psi.ext.RsConstantImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsConstantStub"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-UseItem ::= AttrsAndVis use UseSpeck ';' {
+upper UseItem ::= use UseSpeck ';' {
   pin = "use"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
   implements = [ "org.rust.lang.core.psi.ext.RsItemElement" ]
   mixin = "org.rust.lang.core.psi.ext.RsUseItemImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsUseItemStub"
@@ -623,9 +622,8 @@ Alias ::= as ('_' | identifier) {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-ExternCrateItem ::= AttrsAndVis extern crate (identifier | self) Alias? ';' {
-  pin = 4
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
+upper ExternCrateItem ::= extern crate (identifier | self) Alias? ';' {
+  pin = 3
   implements = [ "org.rust.lang.core.psi.ext.RsReferenceElement"
                  "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsItemElement" ]
@@ -634,9 +632,8 @@ ExternCrateItem ::= AttrsAndVis extern crate (identifier | self) Alias? ';' {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-ModItem ::= AttrsAndVis mod identifier '{' InnerAttr* Items '}' {
-  pin = 4
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
+upper ModItem ::= mod identifier '{' InnerAttr* Items '}' {
+  pin = 3
   implements = [ "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsItemElement"
                  "org.rust.lang.core.psi.ext.RsMod"
@@ -646,9 +643,8 @@ ModItem ::= AttrsAndVis mod identifier '{' InnerAttr* Items '}' {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-ModDeclItem ::= AttrsAndVis mod identifier ';' {
+upper ModDeclItem ::= mod identifier ';' {
   pin = 'identifier' // make sure `ModDeclItem` goes **after** `ModItem`
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
   implements = [ "org.rust.lang.core.psi.ext.RsReferenceElement"
                  "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsQualifiedNamedElement"
@@ -658,9 +654,8 @@ ModDeclItem ::= AttrsAndVis mod identifier ';' {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-ForeignModItem ::= AttrsAndVis ExternAbi '{' InnerAttr* Items '}' {
-  pin = 3
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
+upper ForeignModItem ::= ExternAbi '{' InnerAttr* Items '}' {
+  pin = 2
   implements = [ "org.rust.lang.core.psi.ext.RsItemElement"
                  "org.rust.lang.core.psi.ext.RsInnerAttributeOwner" ]
   mixin = "org.rust.lang.core.psi.ext.RsForeignModItemImplMixin"
@@ -673,10 +668,9 @@ ForeignModItem ::= AttrsAndVis ExternAbi '{' InnerAttr* Items '}' {
 // Struct & Enums
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-StructItem ::= AttrsAndVis (struct | union) identifier TypeParameterList?
+upper StructItem ::= (struct | union) identifier TypeParameterList?
                ( TupleStructTail | BlockStructTail | UnitStructTail ) {
-  pin = 2
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
+  pin = 1
   implements = [ "org.rust.lang.core.psi.ext.RsStructOrEnumItemElement"
                  "org.rust.lang.core.psi.ext.RsFieldsOwner" ]
   mixin = "org.rust.lang.core.psi.ext.RsStructItemImplMixin"
@@ -688,9 +682,8 @@ private TupleStructTail ::= TupleFields WhereClause? ';' { pin = 1 }
 private UnitStructTail ::= WhereClause? ';'
 private BlockStructTail ::= WhereClause? BlockFields
 
-EnumItem ::= AttrsAndVis enum identifier TypeParameterList? WhereClause? EnumBody {
+upper EnumItem ::= enum identifier TypeParameterList? WhereClause? EnumBody {
   pin = "enum"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
   implements = "org.rust.lang.core.psi.ext.RsStructOrEnumItemElement"
   mixin = "org.rust.lang.core.psi.ext.RsEnumItemImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsEnumItemStub"
@@ -766,9 +759,9 @@ private TupleField_recover ::= !(')' | ',')
 // Trait & Impl
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TraitItem ::= AttrsAndVis unsafe? auto? trait identifier TypeParameterList? TypeParamBounds? WhereClause? Members {
+upper TraitItem ::= unsafe? auto? trait identifier TypeParameterList? TypeParamBounds? WhereClause? Members {
   pin = "trait"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
+  name = ""
   implements = [ "org.rust.lang.core.psi.ext.RsTraitOrImpl"
                  "org.rust.lang.core.psi.ext.RsQualifiedNamedElement"
                  "org.rust.lang.core.psi.ext.RsItemElement"
@@ -780,9 +773,9 @@ TraitItem ::= AttrsAndVis unsafe? auto? trait identifier TypeParameterList? Type
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-ImplItem ::= AttrsAndVis default_? unsafe? impl TypeParameterList? ( TraitImpl | InherentImpl ) WhereClause? Members {
+upper ImplItem ::= unsafe? impl TypeParameterList? ( TraitImpl | InherentImpl ) WhereClause? Members {
   pin = "impl"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
+  name = ""
   implements = [ "org.rust.lang.core.psi.ext.RsTraitOrImpl"
                  "org.rust.lang.core.psi.ext.RsUnsafetyOwner"
                  "org.rust.lang.core.psi.ext.RsInnerAttributeOwner"
@@ -807,15 +800,14 @@ TraitAliasBounds ::= TypeBounds {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-TraitAlias ::= AttrsAndVis trait identifier TypeParameterList? '=' TraitAliasBounds? WhereClause? ';' {
-  pin = 5
+upper TraitAlias ::= trait identifier TypeParameterList? '=' TraitAliasBounds? WhereClause? ';' {
+  pin = 4
   implements = [ "org.rust.lang.core.psi.ext.RsQualifiedNamedElement"
                  "org.rust.lang.core.psi.ext.RsItemElement"
                  "org.rust.lang.core.psi.ext.RsGenericDeclaration"
                  "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  /* "org.rust.lang.core.psi.ext.RsTypeDeclarationElement" */ ]
   mixin = "org.rust.lang.core.psi.ext.RsTraitAliasImplMixin"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
   stubClass = "org.rust.lang.core.stubs.RsTraitAliasStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
@@ -953,7 +945,7 @@ private ImplicitTraitTypeInner ::= Polybound ('+' Polybound)+
 
 private TraitType_upper ::= ('+' Polybound)+
 
-TypeAlias ::= AttrsAndVis default_? TYPE_KW identifier
+upper TypeAlias ::= TYPE_KW identifier
               [ TypeParameterList WhereClause? | WhereClause | TypeParamBounds ]
               [ '=' TypeReference ] ';' {
   pin = 'identifier'
@@ -964,7 +956,6 @@ TypeAlias ::= AttrsAndVis default_? TYPE_KW identifier
                  "org.rust.lang.core.psi.ext.RsAbstractable"
                  "org.rust.lang.core.psi.ext.RsTypeDeclarationElement" ]
   mixin = "org.rust.lang.core.psi.ext.RsTypeAliasImplMixin"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
   stubClass = "org.rust.lang.core.stubs.RsTypeAliasStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
@@ -1304,8 +1295,8 @@ YieldExpr ::= OuterAttr* yield Expr? {
 // Macros
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-Macro ::= AttrsAndVis "macro_rules" '!' identifier ShallowMacroBody <<macroSemicolon>> {
+upper Macro ::= "macro_rules" '!' identifier ShallowMacroBody <<macroSemicolon>> {
+  pin = 2
   implements = [ "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsOuterAttributeOwner"
                  "org.rust.lang.core.psi.ext.RsQualifiedNamedElement"
@@ -1314,9 +1305,9 @@ Macro ::= AttrsAndVis "macro_rules" '!' identifier ShallowMacroBody <<macroSemic
   extends = "org.rust.lang.core.psi.ext.RsMacroImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsMacroStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
-  pin = 3
 }
+
+BlockElementMacro ::= AttrsAndVis Macro { name = "macro" }
 
 MacroBody ::= <<any_braces (MacroCase ';'?)*>> {
   elementTypeFactory = "org.rust.lang.core.psi.LazyElementsKt.factory"
@@ -1351,15 +1342,14 @@ MacroReference ::= '$' MetaVarIdentifier {
 MacroExpansionReferenceGroup ::= '$' '(' MacroExpansionContents ')' MacroExpansionGroupSeparator? ('*' | '+' | '?') { pin = 2 }
 MacroExpansionGroupSeparator ::= <<macroBindingGroupSeparatorToken>>
 
-Macro2 ::= AttrsAndVis MACRO_KW identifier ( Macro2FunctionLikeBody | Macro2MatchLikeBody ) {
+upper Macro2 ::= MACRO_KW identifier ( Macro2FunctionLikeBody | Macro2MatchLikeBody ) {
+  pin = 1
   implements = [ "org.rust.lang.core.psi.ext.RsNameIdentifierOwner"
                  "org.rust.lang.core.psi.ext.RsItemElement"
                  "org.rust.lang.core.psi.ext.RsQualifiedNamedElement" ]
   extends = "org.rust.lang.core.psi.ext.RsMacro2ImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsMacro2Stub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
-  pin = 2
 }
 
 private Macro2FunctionLikeBody ::= '(' MacroPatternContents ')' '{' MacroExpansionContents '}'
@@ -1378,9 +1368,8 @@ fake MacroCall ::= AttrsAndVis PathWithoutTypeArgs '!' identifier? (
 }
 
 // Parses top-level macro calls with semicolon like `foo();`
-ItemLikeMacroCall ::= <<parseMacroCall 'MacroCallParsingMode.ITEM'>> {
+upper ItemLikeMacroCall ::= <<parseMacroCall 'MacroCallParsingMode.ITEM'>> {
   elementType = MacroCall
-  hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
   name = "macro call"
 }
 
@@ -1493,7 +1482,7 @@ InnerAttrsAndBlock ::= '{' InnerAttr* BlockElement* '}' {
 
 private ShallowBlock ::= <<parseCodeBlockLazy>>
 
-private BlockElement ::= !'}' (Macro | BlockElementMacroCall | ExprStmtOrLastExpr | Stmt | Item) {
+private BlockElement ::= !'}' (BlockElementMacro | BlockElementMacroCall | ExprStmtOrLastExpr | Stmt | Item) {
   pin = 1
   recoverWhile = BlockElement_recover
 }
