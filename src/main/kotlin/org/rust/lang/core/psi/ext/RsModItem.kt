@@ -43,9 +43,6 @@ abstract class RsModItemImplMixin : RsStubbedNamedElementImpl<RsModItemStub>,
     override val innerAttrList: List<RsInnerAttr>
         get() = stubChildrenOfType()
 
-    override val outerAttrList: List<RsOuterAttr>
-        get() = stubChildrenOfType()
-
     override fun getContext(): PsiElement? = RsExpandedElement.getContextImpl(this)
 
     override fun getUseScope(): SearchScope = RsPsiImplUtil.getDeclarationUseScope(this) ?: super.getUseScope()
