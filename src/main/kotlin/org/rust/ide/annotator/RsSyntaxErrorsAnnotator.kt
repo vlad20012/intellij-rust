@@ -30,15 +30,46 @@ import kotlin.reflect.KClass
 class RsSyntaxErrorsAnnotator : AnnotatorBase() {
     override fun annotateInternal(element: PsiElement, holder: AnnotationHolder) {
         when (element) {
-            is RsFunction -> checkFunction(holder, element)
-            is RsStructItem -> checkStructItem(holder, element)
-            is RsTypeAlias -> checkTypeAlias(holder, element)
-            is RsConstant -> checkConstant(holder, element)
+            is RsItemElement -> {
+                checkItem(holder, element)
+                when (element) {
+                    is RsFunction -> checkFunction(holder, element)
+                    is RsStructItem -> checkStructItem(holder, element)
+                    is RsTypeAlias -> checkTypeAlias(holder, element)
+                    is RsConstant -> checkConstant(holder, element)
+                }
+            }
+            is RsMacro -> checkMacro(holder, element)
             is RsValueParameterList -> checkValueParameterList(holder, element)
             is RsValueParameter -> checkValueParameter(holder, element)
             is RsTypeParameterList -> checkTypeParameterList(holder, element)
             is RsTypeArgumentList -> checkTypeArgumentList(holder, element)
         }
+    }
+}
+
+private fun checkItem(holder: AnnotationHolder, item: RsItemElement) {
+    if (item !is RsAbstractable) {
+        checkItemOrMacro(item, item.itemKindNameCapitalized, item.itemDefKeyword, holder)
+    }
+}
+
+private fun checkMacro(holder: AnnotationHolder, element: RsMacro) =
+    checkItemOrMacro(element, "Macro", element.macroRules, holder)
+
+private fun checkItemOrMacro(item: RsElement, itemName: String, highlightElement: PsiElement, holder: AnnotationHolder) {
+    val parent = item.context
+    if (parent is RsForeignModItem) {
+        holder.createErrorAnnotation(
+            highlightElement,
+            "$itemName is not allowed inside ${parent.itemKindName}"
+        )
+    } else if (parent is RsMembers) {
+        val parentParent = parent.context as? RsTraitOrImpl ?: return
+        holder.createErrorAnnotation(
+            highlightElement,
+            "$itemName is not allowed inside ${parentParent.itemKindName}"
+        )
     }
 }
 

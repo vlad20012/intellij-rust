@@ -286,4 +286,52 @@ class RsSyntaxErrorsAnnotatorTest : RsAnnotatorTestBase(RsSyntaxErrorsAnnotator:
         unsafe extern "C" fn ext_fn1(a: bool, ...) {}
         unsafe extern "C" fn ext_fn2(a: bool, args: ...) {}
     """)
+
+    fun `test illegal items inside trait, impl or foreign mod`() = checkErrors("""
+        trait T {
+            <error descr="Struct is not allowed inside trait">struct</error> A;
+            <error descr="Union is not allowed inside trait">union</error> B {}
+            <error descr="Module is not allowed inside trait">mod</error> c {}
+            <error descr="Module is not allowed inside trait">mod</error> d;
+            <error descr="Enum is not allowed inside trait">enum</error> E {}
+            <error descr="Trait is not allowed inside trait">trait</error> F {}
+            <error descr="Trait alias is not allowed inside trait">trait</error> G = F;
+            <error descr="Impl is not allowed inside trait">impl</error> A {}
+            <error descr="Use item is not allowed inside trait">use</error> A;
+            <error descr="Foreign module is not allowed inside trait">extern</error> "C" {}
+            <error descr="Extern crate is not allowed inside trait">extern</error> crate H;
+            <error descr="Macro is not allowed inside trait">macro_rules</error>! i {}
+            <error descr="Macro is not allowed inside trait">macro</error> j() {}
+        }
+        impl S {
+            <error descr="Struct is not allowed inside impl">struct</error> A;
+            <error descr="Union is not allowed inside impl">union</error> B {}
+            <error descr="Module is not allowed inside impl">mod</error> c {}
+            <error descr="Module is not allowed inside impl">mod</error> d;
+            <error descr="Enum is not allowed inside impl">enum</error> E {}
+            <error descr="Trait is not allowed inside impl">trait</error> F {}
+            <error descr="Trait alias is not allowed inside impl">trait</error> G = F;
+            <error descr="Impl is not allowed inside impl">impl</error> A {}
+            <error descr="Use item is not allowed inside impl">use</error> A;
+            <error descr="Foreign module is not allowed inside impl">extern</error> "C" {}
+            <error descr="Extern crate is not allowed inside impl">extern</error> crate H;
+            <error descr="Macro is not allowed inside impl">macro_rules</error>! i {}
+            <error descr="Macro is not allowed inside impl">macro</error> j() {}
+        }
+        extern "C" {
+            <error descr="Struct is not allowed inside foreign module">struct</error> A;
+            <error descr="Union is not allowed inside foreign module">union</error> B {}
+            <error descr="Module is not allowed inside foreign module">mod</error> c {}
+            <error descr="Module is not allowed inside foreign module">mod</error> d;
+            <error descr="Enum is not allowed inside foreign module">enum</error> E {}
+            <error descr="Trait is not allowed inside foreign module">trait</error> F {}
+            <error descr="Trait alias is not allowed inside foreign module">trait</error> G = F;
+            <error descr="Impl is not allowed inside foreign module">impl</error> A {}
+            <error descr="Use item is not allowed inside foreign module">use</error> A;
+            <error descr="Foreign module is not allowed inside foreign module">extern</error> "C" {}
+            <error descr="Extern crate is not allowed inside foreign module">extern</error> crate H;
+            <error descr="Macro is not allowed inside foreign module">macro_rules</error>! i {}
+            <error descr="Macro is not allowed inside foreign module">macro</error> j() {}
+        }
+    """)
 }
