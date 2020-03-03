@@ -266,4 +266,22 @@ class RsSyntaxErrorsAnnotatorTest : RsAnnotatorTestBase(RsSyntaxErrorsAnnotator:
         unsafe extern "C" fn ext_fn1(a: bool, ...) {}
         unsafe extern "C" fn ext_fn2(a: bool, args: ...) {}
     """)
+
+    fun `test 123`() = checkErrors("""
+        trait T {
+            <error descr="Struct is not allowed inside trait">struct A;</error>
+            <error descr="Union is not allowed inside trait">union B {}</error>
+            <error descr="Module is not allowed inside trait">mod c {}</error>
+            <error descr="Module is not allowed inside trait">mod d;</error>
+            <error descr="Enum is not allowed inside trait">enum E {}</error>
+            <error descr="Trait is not allowed inside trait">trait F {}</error>
+            <error descr="Trait alias is not allowed inside trait">trait G = F;</error>
+            <error descr="Impl is not allowed inside trait">impl A {}</error>
+            <error descr="Use item is not allowed inside trait">use A;</error>
+            <error descr="Foreign module is not allowed inside trait">extern "C" {}</error>
+            <error descr="Extern crate is not allowed inside trait">extern crate H;</error>
+            macro_rules! i {}
+            <error descr="Macro is not allowed inside trait">macro j() {}</error>
+        }
+    """)
 }

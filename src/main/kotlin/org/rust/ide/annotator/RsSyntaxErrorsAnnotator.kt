@@ -27,10 +27,15 @@ import java.lang.Integer.max
 class RsSyntaxErrorsAnnotator : AnnotatorBase() {
     override fun annotateInternal(element: PsiElement, holder: AnnotationHolder) {
         when (element) {
-            is RsFunction -> checkFunction(holder, element)
-            is RsStructItem -> checkStructItem(holder, element)
-            is RsTypeAlias -> checkTypeAlias(holder, element)
-            is RsConstant -> checkConstant(holder, element)
+            is RsItemElement -> {
+                checkItem(holder, element)
+                when (element) {
+                    is RsFunction -> checkFunction(holder, element)
+                    is RsStructItem -> checkStructItem(holder, element)
+                    is RsTypeAlias -> checkTypeAlias(holder, element)
+                    is RsConstant -> checkConstant(holder, element)
+                }
+            }
             is RsValueParameterList -> checkValueParameterList(holder, element)
             is RsValueParameter -> checkValueParameter(holder, element)
             is RsTypeParameterList -> checkTypeParameterList(holder, element)
@@ -38,6 +43,23 @@ class RsSyntaxErrorsAnnotator : AnnotatorBase() {
     }
 }
 
+private fun checkItem(holder: AnnotationHolder, item: RsItemElement) {
+    if (item !is RsAbstractable) {
+        val parent = item.parent
+        if (parent is RsForeignModItem) {
+            holder.createErrorAnnotation(
+                item,
+                "${item.itemKindNameCapitalized} is not allowed inside ${parent.itemKindName}"
+            )
+        } else if (parent is RsMembers) {
+            val parentParent = parent.parent as? RsTraitOrImpl ?: return
+            holder.createErrorAnnotation(
+                item,
+                "${item.itemKindNameCapitalized} is not allowed inside ${parentParent.itemKindName}"
+            )
+        }
+    }
+}
 private fun checkFunction(holder: AnnotationHolder, fn: RsFunction) {
     when (fn.owner) {
         is RsAbstractableOwner.Free -> {
