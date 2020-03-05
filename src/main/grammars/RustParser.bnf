@@ -315,6 +315,7 @@ Item ::= AttrsAndVis default_? (Constant
                   | Macro2
                   | ItemLikeMacroCall) {
   name = "item"
+  elementType = ToBeUpped
   hooks = [ leftBinder = "ADJACENT_LINE_COMMENTS" ]
 }
 
@@ -654,14 +655,15 @@ upper ModDeclItem ::= mod identifier ';' {
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-upper ForeignModItem ::= ExternAbi '{' InnerAttr* Items '}' {
-  pin = 2
+upper ForeignModItem ::= ExternAbi ForeignModBody {
   implements = [ "org.rust.lang.core.psi.ext.RsItemElement"
                  "org.rust.lang.core.psi.ext.RsInnerAttributeOwner" ]
   mixin = "org.rust.lang.core.psi.ext.RsForeignModItemImplMixin"
   stubClass = "org.rust.lang.core.stubs.RsPlaceholderStub"
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
+// Extracted due to a bug in uppers. BACKCOMPAT 2019.3
+private ForeignModBody ::= '{' InnerAttr* Items '}' { pin = 1 }
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1307,7 +1309,10 @@ upper Macro ::= "macro_rules" '!' identifier ShallowMacroBody <<macroSemicolon>>
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-BlockElementMacro ::= AttrsAndVis Macro { name = "macro" }
+BlockElementMacro ::= AttrsAndVis Macro {
+  name = "macro"
+  elementType = ToBeUpped
+}
 
 MacroBody ::= <<any_braces (MacroCase ';'?)*>> {
   elementTypeFactory = "org.rust.lang.core.psi.LazyElementsKt.factory"
@@ -1367,13 +1372,13 @@ fake MacroCall ::= AttrsAndVis PathWithoutTypeArgs '!' identifier? (
   elementTypeFactory = "org.rust.lang.core.stubs.StubImplementationsKt.factory"
 }
 
-// Parses top-level macro calls with semicolon like `foo();`
+// Parses top-level macro calls with semicolon like `foo!();`
 upper ItemLikeMacroCall ::= <<parseMacroCall 'MacroCallParsingMode.ITEM'>> {
   elementType = MacroCall
-  name = "macro call"
+  name = ""
 }
 
-// Parses macro calls with semicolon like `foo();`. Unlike `ItemLikeMacroCall` rule, it does not recover on a missing semicolon.
+// Parses macro calls with semicolon like `foo!();`. Unlike `ItemLikeMacroCall` rule, it does not recover on a missing semicolon.
 // This rule is required to distinguish statements from expressions like `foo!() + 1` inside blocks.
 BlockElementMacroCall ::= <<parseMacroCall 'MacroCallParsingMode.BLOCK'>> {
   elementType = MacroCall
@@ -1529,3 +1534,9 @@ private never ::= !()
 // Trailing commas are allowed
 private meta comma_separated_list ::= <<param>> ( ',' <<param>> )* ','?
 private meta list_element ::= !'>' <<param>> (',' | &'>') { pin = 2 }
+
+// Use as an `elementType` for always upped rules like `Rule ::= FOO BAR ( upper1 | upper2 ) `
+// (without an `elementType` upper rules won't work, GK can change element type of the frame
+// only if it already has some type)
+// https://github.com/JetBrains/Grammar-Kit/blob/d716ade658/src/org/intellij/grammar/parser/GeneratedParserUtilBase.java#L656
+fake ToBeUpped ::=
