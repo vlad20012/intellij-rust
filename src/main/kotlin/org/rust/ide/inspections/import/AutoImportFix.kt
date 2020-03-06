@@ -470,7 +470,7 @@ sealed class ImportInfo {
 data class ImportCandidate(val qualifiedNamedItem: QualifiedNamedItem, val info: ImportInfo)
 
 private fun RsPath.namespaceFilter(isCompletion: Boolean): (RsQualifiedNamedElement) -> Boolean = when (context) {
-    is RsTypeElement -> { e ->
+    is RsTypeReference -> { e ->
         when (e) {
             is RsEnumItem,
             is RsStructItem,

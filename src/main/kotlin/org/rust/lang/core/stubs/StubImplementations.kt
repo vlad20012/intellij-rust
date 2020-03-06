@@ -209,6 +209,7 @@ fun factory(name: String): RsStubElementType<*, *> = when (name) {
     "REF_LIKE_TYPE" -> RsRefLikeTypeStub.Type
     "FN_POINTER_TYPE" -> RsPlaceholderStub.Type("FN_POINTER_TYPE", ::RsFnPointerTypeImpl)
     "TUPLE_TYPE" -> RsPlaceholderStub.Type("TUPLE_TYPE", ::RsTupleTypeImpl)
+    "PAREN_TYPE" -> RsPlaceholderStub.Type("PAREN_TYPE", ::RsParenTypeImpl)
     "BASE_TYPE" -> RsBaseTypeStub.Type
     "FOR_IN_TYPE" -> RsPlaceholderStub.Type("FOR_IN_TYPE", ::RsForInTypeImpl)
     "TRAIT_TYPE" -> RsTraitTypeStub.Type
@@ -1078,7 +1079,7 @@ class RsRefLikeTypeStub(
     val isMut: Boolean,
     val isRef: Boolean,
     val isPointer: Boolean
-) : StubBase<RsTypeElement>(parent, elementType) {
+) : StubBase<RsRefLikeType>(parent, elementType) {
 
     object Type : RsStubElementType<RsRefLikeTypeStub, RsRefLikeType>("REF_LIKE_TYPE") {
 
@@ -1112,7 +1113,7 @@ class RsRefLikeTypeStub(
 class RsTraitTypeStub(
     parent: StubElement<*>?, elementType: IStubElementType<*, *>,
     val isImpl: Boolean
-) : StubBase<RsTypeElement>(parent, elementType) {
+) : StubBase<RsTraitType>(parent, elementType) {
 
     object Type : RsStubElementType<RsTraitTypeStub, RsTraitType>("TRAIT_TYPE") {
 
