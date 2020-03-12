@@ -17,7 +17,7 @@ class MacroExpansionFileSystemTest : BasePlatformTestCase() {
             createDirectory("/foo")
             createFileWithContent("/foo/bar.txt", "bar content")
             createFileWithContent("/foo/baz.txt", "baz content")
-            refresh(false)
+            fullyRefreshDirectory(root)
         }
         val bar = vfs.findNonNullFileByPath("/foo/bar.txt")
         val baz = vfs.findNonNullFileByPath("/foo/baz.txt")
@@ -33,7 +33,7 @@ class MacroExpansionFileSystemTest : BasePlatformTestCase() {
         assertEquals(vfs.findNonNullFileByPath("/"), parent.parent)
 
         vfs.setFileContent("/foo/bar.txt", "new bar content")
-        vfs.refresh(false)
+        fullyRefreshDirectory(vfs.root)
         assertEquals("new bar content", VfsUtil.loadText(bar))
         assertEquals("baz content", VfsUtil.loadText(baz))
 
@@ -45,6 +45,27 @@ class MacroExpansionFileSystemTest : BasePlatformTestCase() {
         fullyRefreshDirectory(vfs.root)
         assertNull(vfs.findFileByPath("/foo/baz.txt"))
         assertNull(vfs.findFileByPath("/foo"))
+    }
+
+    fun `test mkdirs`() {
+        MacroExpansionFileSystem.getInstance().apply {
+            createFileWithContent("/foo/bar/baz/quux", "content", mkdirs = true)
+            assertEquals("content", VfsUtil.loadText(findFileByPath("/foo/bar/baz/quux")!!))
+            fullyRefreshDirectory(root)
+
+        }
+    }
+
+    override fun tearDown() {
+        try {
+            val vfs = MacroExpansionFileSystem.getInstance()
+            for (child in vfs.root.children) {
+                vfs.deleteFile(child.path)
+            }
+            fullyRefreshDirectory(vfs.root)
+        } finally {
+            super.tearDown()
+        }
     }
 }
 
