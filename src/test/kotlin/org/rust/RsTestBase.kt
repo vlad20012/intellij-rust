@@ -32,6 +32,8 @@ import org.rust.cargo.project.model.impl.testCargoProjects
 import org.rust.cargo.project.workspace.CargoWorkspace
 import org.rust.cargo.toolchain.RustChannel
 import org.rust.cargo.toolchain.RustcVersion
+import org.rust.lang.core.macros.MACRO_EXPANSION_VFS_ROOT
+import org.rust.lang.core.macros.MacroExpansionFileSystem
 import org.rust.lang.core.macros.findExpansionElements
 import org.rust.lang.core.macros.macroExpansionManager
 import org.rust.lang.core.psi.ext.startOffset
@@ -77,6 +79,20 @@ abstract class RsTestBase : BasePlatformTestCase(), RsTestCase {
             super.tearDown()
         } catch (e: Exception) {
             if (e.javaClass.simpleName != "DisposalException") throw e
+        }
+
+        val vfs = MacroExpansionFileSystem.getInstance()
+        if (vfs.exists("/$MACRO_EXPANSION_VFS_ROOT")) {
+            for (child in vfs.getDirectory("/$MACRO_EXPANSION_VFS_ROOT").copyChildren()) {
+                check(child is MacroExpansionFileSystem.FSItem.FSDir.DummyDir) {
+                    "$child is not dummy"
+                }
+            }
+        }
+        for (child in vfs.getDirectory("/").copyChildren()) {
+            if (child.name != MACRO_EXPANSION_VFS_ROOT) {
+                error("${child.name} should be deleted after the test")
+            }
         }
     }
 
