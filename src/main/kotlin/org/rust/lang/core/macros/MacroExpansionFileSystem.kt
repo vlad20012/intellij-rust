@@ -125,12 +125,13 @@ class MacroExpansionFileSystem : LocalFileSystemBase() {
         }
     }
 
-    private fun convert(path: String): FSItem? {
+    private fun convert(path: String, mkdirs: Boolean = false): FSItem? {
         val segments = StringUtil.split(path, "/")
 
         var file: FSItem = root
         for (segment in segments) {
-            file = (file as? FSDir)?.findChild(segment) ?: return null
+            if (file !is FSDir) return null
+            file = file.findChild(segment) ?: if (mkdirs) file.addChildDir(segment) else return null
         }
 
         return file
@@ -326,9 +327,9 @@ class MacroExpansionFileSystem : LocalFileSystemBase() {
         return pathStart to filename
     }
 
-    fun createFileWithContent(path: String, content: String) {
+    fun createFileWithContent(path: String, content: String, mkdirs: Boolean = false) {
         val (parentName, name) = splitFilenameAndParent(path)
-        val parent = convert(parentName) ?: throw FileNotFoundException(parentName)
+        val parent = convert(parentName, mkdirs) ?: throw FileNotFoundException(parentName)
         check(parent is FSDir)
         val item = parent.addChildFile(name)
         item.setContent(content.toByteArray())

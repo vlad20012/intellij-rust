@@ -228,9 +228,9 @@ abstract class MacroExpansionTaskBase(
                     doneStages.incrementAndGet()
                     result
                 }
+                totalExpanded.addAndGet(stages3.size)
 
                 val future = CompletableFuture<Unit>()
-
                 fs.applyToVfs(true, Runnable {
                     // we're in write action
                     for (stage3 in stages3) {
@@ -238,24 +238,6 @@ abstract class MacroExpansionTaskBase(
                     }
                     future.complete(Unit)
                 })
-
-                // Note that if project is disposed, this task will not be executed or may be executed partially
-//                executeSequentially(transactionExecutor, stages2.chunked(VFS_BATCH_SIZE)) { stages2c ->
-//                    runWriteAction {
-//                        val batch = vfsBatchFactory()
-//                        val stages3 = stages2c.map { stage2 ->
-//                            val result = stage2.writeExpansionToFs(batch, currentStep.get())
-//                            result
-//                        }
-//                        batch.applyToVfs()
-//                        for (stage3 in stages3) {
-//                            stage3.save(storage)
-//                        }
-//                        doneStages.addAndGet(stages3.size * 2)
-//                    }
-//                    totalExpanded.addAndGet(stages2c.size)
-//                    Unit
-//                }.thenApply { Unit }
 
                 future
             } else {

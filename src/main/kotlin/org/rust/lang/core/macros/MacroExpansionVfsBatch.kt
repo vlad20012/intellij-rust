@@ -37,13 +37,8 @@ class MacroExpansionVfsBatchImpl(rootDirName: String) : MacroExpansionVfsBatch {
 
     private fun createFileInternal(content: String, stepNumber: Int): String {
         val name = randomLowercaseAlphabetic(16)
-        return batch.run {
-            contentRoot
-                .getOrCreateDirectory(stepNumber.toString())
-                .getOrCreateDirectory(name[0].toString())
-                .getOrCreateDirectory(name[1].toString())
-                .createFile(name.substring(2) + ".rs", content)
-        }
+        val parentPath = "$contentRoot/${stepNumber}/${name[0]}/${name[1]}"
+        return batch.createFile(parentPath, name.substring(2) + ".rs", content)
     }
 
     override fun deleteFile(file: VirtualFile) {
@@ -60,82 +55,53 @@ class MacroExpansionVfsBatchImpl(rootDirName: String) : MacroExpansionVfsBatch {
     }
 
     private sealed class PathImpl : MacroExpansionVfsBatch.Path {
-        abstract fun toPath(): String
 
-        class VFile(val file: VirtualFile): PathImpl() {
+        class VFile(val file: VirtualFile) : PathImpl() {
             override fun toVirtualFile(): VirtualFile? = file
-
-            override fun toPath(): String = file.path
         }
-        class StringPath(val path: String): PathImpl() {
+
+        class StringPath(val path: String) : PathImpl() {
             override fun toVirtualFile(): VirtualFile? =
                 MacroExpansionFileSystem.getInstance().findFileByPath(path)
-
-            override fun toPath(): String = path
         }
     }
 }
 
 class VfsBatch {
-    fun String.createFile(name: String, content: String): String =
-        createFile(this, name, content)
+    private val pathsToMarkDirty: MutableSet<String> = mutableSetOf()
 
-    @JvmName("createFile_")
-    private fun createFile(parent: String, name: String, content: String): String {
+    fun createFile(parent: String, name: String, content: String): String {
         val child = "$parent/$name"
-        MacroExpansionFileSystem.getInstance().createFileWithContent(child, content)
-        markDirtyByPath(parent)
+        MacroExpansionFileSystem.getInstance().createFileWithContent(child, content, mkdirs = true)
+        pathsToMarkDirty += parent
         return child
-    }
-
-    private fun createDirectory(parent: String, name: String): String {
-        val child = "$parent/$name"
-        MacroExpansionFileSystem.getInstance().createDirectory(child)
-        markDirtyByPath(parent)
-        return child
-    }
-
-    fun String.getOrCreateDirectory(name: String): String =
-        getOrCreateDirectory(this, name)
-
-    @JvmName("getOrCreateDirectory_")
-    private fun getOrCreateDirectory(parent: String, name: String): String {
-        val child = "$parent/$name"
-        if (MacroExpansionFileSystem.getInstance().exists(child)) {
-            return child
-        }
-        return createDirectory(parent, name)
     }
 
     fun writeFile(file: VirtualFile, content: String) {
         MacroExpansionFileSystem.getInstance().setFileContent(file.path, content)
-
         markDirty(file)
     }
 
     fun deleteFile(file: VirtualFile) {
         MacroExpansionFileSystem.getInstance().deleteFile(file.path)
-
         markDirty(file)
     }
 
     fun applyToVfs(async: Boolean, callback: Runnable? = null) {
         val root = MacroExpansionFileSystem.getInstance().findFileByPath("/") ?: return
+
+        for (path in pathsToMarkDirty) {
+            var file = root
+            for (segment in StringUtil.split(path, "/")) {
+                file = file.findChild(segment) ?: break
+            }
+            markDirty(file)
+        }
+
         RefreshQueue.getInstance().refresh(async, true, callback, root)
     }
 
     private fun markDirty(file: VirtualFile) {
         (file as NewVirtualFile).markDirty()
-    }
-
-    private fun markDirtyByPath(path: String) {
-        val segments = StringUtil.split(path, "/")
-
-        var file = MacroExpansionFileSystem.getInstance().findFileByPath("/") ?: return
-        for (segment in segments) {
-            file = file.findChild(segment) ?: break
-        }
-
-        markDirty(file)
     }
 }
