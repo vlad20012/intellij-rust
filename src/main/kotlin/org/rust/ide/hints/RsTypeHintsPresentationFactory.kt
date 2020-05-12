@@ -192,14 +192,18 @@ class RsTypeHintsPresentationFactory(private val factory: PresentationFactory, p
             startWithPlaceholder = checkSize(level, 1)
         )
 
-    private fun anonTypeHint(type: TyAnon, level: Int): InlayPresentation =
-        factory.collapsible(
-            prefix = text("impl "),
+    private fun anonTypeHint(type: TyAnon, level: Int): InlayPresentation {
+        val implText = text("impl ")
+        val prefix = type.definition?.let {factory.psiSingleReference(implText) { it } }
+            ?: implText
+        return factory.collapsible(
+            prefix = prefix,
             collapsed = text(PLACEHOLDER),
             expanded = { type.traits.map { traitItemTypeHint(it, level + 1, true) }.join("+") },
             suffix = text(""),
             startWithPlaceholder = checkSize(level, type.traits.size)
         )
+    }
 
     private fun parametersHint(kinds: List<Kind>, level: Int): InlayPresentation =
         kinds.map { hint(it, level) }.join(", ")
