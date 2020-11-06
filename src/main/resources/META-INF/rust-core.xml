@@ -964,7 +964,7 @@
 
         <lang.elementManipulator forClass="org.rust.lang.core.psi.RsLitExpr"
                                  implementationClass="org.rust.ide.injected.RsStringLiteralManipulator"/>
-        <multiHostInjector implementation="org.rust.ide.injected.RsRegExpInjector"/>
+        <multiHostInjector implementation="org.rust.ide.injected.RsStringLiteralInjector"/>
         <multiHostInjector implementation="org.rust.ide.injected.RsDoctestLanguageInjector"/>
 
 
