@@ -5,6 +5,7 @@
 
 package org.rust.ide.template.postfix
 
+import com.intellij.codeInsight.template.TemplateResultListener
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateWithExpressionSelector
 import com.intellij.openapi.editor.Editor
 import com.intellij.psi.PsiDocumentManager
@@ -49,14 +50,28 @@ class MatchPostfixTemplate(provider: RsPostfixTemplateProvider) :
         PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(editor.document)
 
         val matchBody = matchExpr.matchBody ?: return
+        val arm = matchBody.matchArmList.firstOrNull() ?: return
+        val blockExpr = arm.expr as? RsBlockExpr ?: return
         val wildPatterns = matchBody.descendantsOfType<RsPatWild>()
 
         if (wildPatterns.isEmpty()) {
-            val arm = matchBody.matchArmList.firstOrNull() ?: return
-            val blockExpr = arm.expr as? RsBlockExpr ?: return
-            editor.caretModel.moveToOffset(blockExpr.block.lbrace.textOffset + 1)
+            moveCaretToMatchArmBlock(editor, blockExpr)
         } else {
-            editor.buildAndRunTemplate(matchBody, wildPatterns.map { it.createSmartPointer() })
+            val blockExprPointer = blockExpr.createSmartPointer()
+            editor.buildAndRunTemplate(
+                matchBody,
+                wildPatterns.map { it.createSmartPointer() },
+                TemplateResultListener {
+                    if (it == TemplateResultListener.TemplateResult.Finished) {
+                        val restoredBlockExpr = blockExprPointer.element ?: return@TemplateResultListener
+                        moveCaretToMatchArmBlock(editor, restoredBlockExpr)
+                    }
+                }
+            )
         }
+    }
+
+    private fun moveCaretToMatchArmBlock(editor: Editor, blockExpr: RsBlockExpr) {
+        editor.caretModel.moveToOffset(blockExpr.block.lbrace.textOffset + 1)
     }
 }
