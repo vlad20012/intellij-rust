@@ -6,9 +6,6 @@
 package org.rust.ide.intentions
 
 import com.intellij.codeInsight.hint.HintManager
-import com.intellij.codeInsight.template.TemplateBuilderImpl
-import com.intellij.codeInsight.template.TemplateManager
-import com.intellij.codeInsight.template.impl.ConstantNode
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapiext.Testmark
@@ -17,7 +14,7 @@ import com.intellij.psi.PsiElement
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.ancestorStrict
 import org.rust.lang.core.psi.ext.descendantsOfType
-import org.rust.lang.core.psi.ext.startOffset
+import org.rust.openapiext.newTemplateBuilder
 
 class ImplTraitToTypeParamIntention : RsElementBaseIntentionAction<ImplTraitToTypeParamIntention.Context>() {
     override fun getText(): String = "Convert `impl Trait` to type parameter"
@@ -68,13 +65,12 @@ class ImplTraitToTypeParamIntention : RsElementBaseIntentionAction<ImplTraitToTy
 
         PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(editor.document)
 
-        val tb = TemplateBuilderImpl(fnSignature)
-        tb.replaceElement(typeParameter.identifier, "typeVar", ConstantNode(typeParameterName), true)
-        tb.replaceElement(newArgType, "typeVar", null as String?, true)
-        val template = tb.buildInlineTemplate()
-
-        editor.caretModel.moveToOffset(fnSignature.startOffset)
-        TemplateManager.getInstance(project).startTemplate(editor, template)
+        val tb = editor.newTemplateBuilder(fnSignature) ?: return
+        tb.introduceVariableAnd(typeParameter.identifier, typeParameterName) {
+            replaceElementWithVariable(newArgType)
+        }
+        tb.withExpressionsHighlighting()
+        tb.runInline()
     }
 
     data class Context(

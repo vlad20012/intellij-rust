@@ -16,7 +16,10 @@ import org.rust.ide.inspections.getTypeArgumentsAndDeclaration
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.RsElementTypes.COMMA
 import org.rust.lang.core.psi.RsElementTypes.LT
-import org.rust.lang.core.psi.ext.*
+import org.rust.lang.core.psi.ext.RsElement
+import org.rust.lang.core.psi.ext.elementType
+import org.rust.lang.core.psi.ext.getNextNonCommentSibling
+import org.rust.lang.core.psi.ext.requiredGenericParameters
 import org.rust.openapiext.buildAndRunTemplate
 import org.rust.openapiext.createSmartPointer
 
@@ -59,7 +62,7 @@ class AddTypeArguments(element: RsElement) : LocalQuickFixAndIntentionActionOnPs
 /**
  * Inserts type arguments if they are needed and returns a list of inserted type arguments.
  */
-private fun insertTypeArgumentsIfNeeded(element: RsElement): List<RsTypeReference>? {
+fun insertTypeArgumentsIfNeeded(element: RsElement): List<RsTypeReference>? {
     val (typeArguments, declaration) = getTypeArgumentsAndDeclaration(element) ?: return null
 
     val requiredParameters = declaration.requiredGenericParameters
